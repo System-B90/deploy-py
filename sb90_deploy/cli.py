@@ -5,6 +5,7 @@ update       in-place upgrade (online, or --package <offline bundle>)
 link-hive    co-locate with a Hive stack on the same Docker daemon
 setup        (re-)run the app's setup.py wizard
 bundle       CI: craft the online + offline release archives
+publish      maintainer: bump manifests, tag and push the next release
 """
 
 from __future__ import annotations
@@ -49,6 +50,10 @@ def _parser() -> argparse.ArgumentParser:
     bundle.add_argument("--repo", help="repo root the bundle.files paths are relative to")
     bundle.add_argument("--images", choices=["pull", "local", "skip"], default="pull")
     bundle.add_argument("--no-wheels", action="store_true")
+
+    from .release import add_arguments
+
+    add_arguments(sub.add_parser("publish", help="tag and push the next release"))
     return parser
 
 
@@ -60,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
 
             craft(args.app, args.tag, args.out, args.repo, args.images, not args.no_wheels)
             return 0
+
+        if args.command == "publish":
+            from .release import publish
+
+            return publish(args)
 
         from .deployment import Deployment
 

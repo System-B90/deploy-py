@@ -44,6 +44,7 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
 | `link-hive` | `linkhive.py` | `link-hive.sh`, `link-hive.ps1` |
 | `setup` | the app's `setup.py` + `wizard.py`, `tls.py`, `hive.py` | each app's `setup.py` |
 | `bundle` | `bundle.py` | each workflow's `craft-release` shell steps |
+| `publish` | `release.py` | each repo's `scripts/publish.py` / `bump_version.py` |
 
 ## `app.json`
 
@@ -112,6 +113,31 @@ In an app's release workflow, use the org composite action:
 - uses: System-B90/.github/actions/craft-release@main
   with:
       tag: ${{ github.ref_name }}
+```
+
+## Publishing a release
+
+Maintainers cut a release from a clean checkout of the release branch:
+
+```
+python -m sb90_deploy publish [--bump patch|minor|major] [--rc/--no-rc] [--version X.Y.Z] [-y] [--dry]
+```
+
+It takes the latest `v*` tag (an rc sorts below its release), picks the next
+version, writes it into every file in app.json's `release.manifests`, commits
+`chore: bump version to X`, and pushes the branch and the annotated tag. That tag
+is what the release workflow and `bundle` build from. `--dry` commits locally
+and pushes nothing.
+
+```jsonc
+"release": {
+  "branches": ["master"],                 // default ["master"]
+  "manifests": [
+    "package.json",                       // first "version" field
+    {"path": "package-lock.json", "count": 2},   // root + packages[""]
+    {"path": "cli/app_cli/__init__.py", "format": "python"}  // __version__
+  ]
+}
 ```
 
 ## Development
