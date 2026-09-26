@@ -10,7 +10,7 @@ jobs:
     # and the Windows leg is real coverage — operators install on Windows too
     # and the self-hosted pool is Linux-only.
     test:
-        name: Lint and test (${{ matrix.os }}, py${{ matrix.python }})
+        name: Lint and Test (${{ matrix.os }}, py${{ matrix.python }})
         runs-on: ${{ matrix.os }}
         timeout-minutes: 15
         strategy:
@@ -39,7 +39,7 @@ jobs:
     # only promised to be 3.6+. Parse-and-run it on a real 3.6, and statically
     # check its minimum version with vermin.
     bootstrap-py36:
-        name: bootstrap.py on Python 3.6
+        name: Bootstrap on Python 3.6
         runs-on: ubuntu-latest
         timeout-minutes: 10
         container: python:3.6-slim
@@ -60,7 +60,7 @@ jobs:
     # The primary deployment target: air-gapped Ubuntu 22.04 with the stock
     # python3 (3.10) and no python3-venv, so ensurepip is missing.
     bootstrap-jammy:
-        name: bootstrap.py on Ubuntu 22.04 without python3-venv
+        name: Bootstrap on Ubuntu 22.04 without python3-venv
         runs-on: ubuntu-latest
         timeout-minutes: 10
         container: ubuntu:22.04

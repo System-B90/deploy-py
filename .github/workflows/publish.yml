@@ -1,4 +1,4 @@
-name: Publish to org pip index
+name: Publish
 
 on:
     push:
@@ -6,7 +6,7 @@ on:
 
 jobs:
     publish:
-        name: Build and publish sb90-deploy
+        name: Build and Publish sb90-deploy
         runs-on: ubuntu-latest
         timeout-minutes: 20
 
