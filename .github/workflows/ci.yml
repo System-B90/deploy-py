@@ -52,7 +52,9 @@ jobs:
                   test $? -eq 1
             - name: Fails cleanly when no Python 3.10+ exists
               run: |
-                  python sb90_deploy/templates/bootstrap.py install 2>err.txt; test $? -eq 1
+                  set +e
+                  python sb90_deploy/templates/bootstrap.py install 2>err.txt
+                  test $? -eq 1
                   grep -q "Python 3.10+ is needed" err.txt
 
     # The primary deployment target: air-gapped Ubuntu 22.04 with the stock
