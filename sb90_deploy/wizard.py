@@ -116,11 +116,16 @@ class Wizard:
     # -- shared questions -----------------------------------------------------
 
     def domain(
-        self, message: str | None = None, example: str = "app.example.com", key: str | None = None
+        self,
+        message: str | None = None,
+        example: str = "app.example.com",
+        key: str | None = None,
+        default: str = "",
     ) -> str:
         """Domain for the app; sets NEXTAUTH_URL (port-aware once ports() ran)."""
         previous = self.existing.get("NEXTAUTH_URL", "")
-        default = previous.replace("https://", "").replace("http://", "").split(":")[0].rstrip("/")
+        from_url = previous.replace("https://", "").replace("http://", "").split(":")[0].rstrip("/")
+        default = from_url or default
         if key:
             default = self.prev(key, default)
         message = message or f"Domain name for {self.display_name} (e.g. {example})"
