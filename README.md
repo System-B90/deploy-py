@@ -99,6 +99,13 @@ w.write()  # keeps keys it does not own
 
 ## CI
 
+Bundling needs the `bundle` extra (`pip install "sb90-deploy[bundle]"`): wheels are
+resolved per target platform and Python with `uv pip compile`, because `pip download
+--platform/--python-version` still evaluates markers such as `python_version < "3.11"` and
+`sys_platform == "linux"` against the machine doing the bundling. Extra wheel sources:
+`SB90_BUNDLE_FIND_LINKS=<dir>[<os.pathsep><dir>...]`.
+
+
 In an app's release workflow, use the org composite action:
 
 ```yaml

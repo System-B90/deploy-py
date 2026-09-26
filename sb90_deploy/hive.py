@@ -9,11 +9,11 @@
 
 from __future__ import annotations
 
-import getpass
 import os
 import sys
 from collections.abc import Callable
 
+from . import prompts
 from .console import paint, say
 
 MANUAL = "MANUAL_ENTRY_REQUIRED"
@@ -39,9 +39,7 @@ def is_ssh_only_session() -> bool:
     return not os.environ.get("DISPLAY")
 
 
-def password_client(
-    hive_url: str, reason: str = "", verify: bool = False, ask: Callable[[str], str] = input
-):
+def password_client(hive_url: str, reason: str = "", verify: bool = False):
     """Authenticate with a username/password via HiveClient's own /api/core/token/.
 
     Deliberately not a hand-rolled OAuth password grant: Hive's default SSO
@@ -51,8 +49,8 @@ def password_client(
     if reason:
         say(paint("yellow", "\n" + reason))
     say("Sign in with a Hive account that can register SSO applications.")
-    username = ask("Hive username: ").strip()
-    password = getpass.getpass("Hive password: ")
+    username = prompts.text("Hive username")
+    password = prompts.secret("Hive password")
     return _client_class()(username=username, password=password, hive_url=hive_url, verify=verify)
 
 
@@ -81,7 +79,6 @@ def register_sso(
     hive_url: str,
     redirect_uri: str,
     confirm: Callable[[str, bool], bool],
-    ask: Callable[[str], str] = input,
 ) -> tuple[str, str]:
     """(client_id, client_secret), or MANUAL_ENTRY_REQUIRED placeholders."""
     HiveClient = _client_class()
@@ -90,15 +87,13 @@ def register_sso(
         attempts.append(lambda: HiveClient.from_sso(hive_url=hive_url, verify=False))
         attempts.append(
             lambda: password_client(
-                hive_url,
-                "Browser sign-in did not complete. Falling back to username/password.",
-                ask=ask,
+                hive_url, "Browser sign-in did not complete. Falling back to username/password."
             )
         )
     else:
         attempts.append(
             lambda: password_client(
-                hive_url, "No local browser reachable (SSH/terminal-only session).", ask=ask
+                hive_url, "No local browser reachable (SSH/terminal-only session)."
             )
         )
 
@@ -130,5 +125,5 @@ def register_sso(
         "then copy the returned client_id / client_secret into .env."
     )
     if confirm("Try registering again now?", True):
-        return register_sso(service_name, hive_url, redirect_uri, confirm, ask)
+        return register_sso(service_name, hive_url, redirect_uri, confirm)
     return MANUAL, MANUAL

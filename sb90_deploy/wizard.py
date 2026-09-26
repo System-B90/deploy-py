@@ -27,14 +27,13 @@ Typical use:
 from __future__ import annotations
 
 import base64
-import getpass
 import os
 import secrets
 import string
 from collections import OrderedDict
 from collections.abc import Callable
 
-from . import envfile, hive, tls
+from . import envfile, hive, prompts, tls
 from .console import paint, say
 from .spec import SPEC_FILE, AppSpec
 
@@ -67,14 +66,11 @@ class Wizard:
 
     # -- primitives ------------------------------------------------------------
 
-    def _input(self, prompt: str) -> str:
+    def _input(self, message: str, default: str = "") -> str:
         if self.defaults_only:
-            say(prompt)
-            return ""
-        try:
-            return input(prompt).strip()
-        except EOFError:
-            return ""
+            say(f"{message} [{default}]" if default else message)
+            return default
+        return prompts.text(message, default)
 
     def set(self, key: str, value: str) -> str:
         self.values[key] = value
@@ -85,13 +81,12 @@ class Wizard:
 
     def ask(self, key: str | None, message: str, default: str = "", required: bool = False) -> str:
         default = self.prev(key, default) if key else default
-        suffix = f" [{default}]" if default else ""
-        answer = self._input(f"{message}{suffix}: ") or default
+        answer = self._input(message, default)
         while required and not answer:
             if self.defaults_only:
                 raise SystemExit(f"{message}: required, and there is no default to use.")
             say(paint("yellow", "  A value is required."))
-            answer = self._input(f"{message}: ")
+            answer = self._input(message)
         return self.set(key, answer) if key else answer
 
     def ask_secret(self, key: str, message: str) -> str:
@@ -99,12 +94,14 @@ class Wizard:
         if self.defaults_only:
             return self.set(key, self.prev(key))
         keep = " (blank = keep existing)" if self.prev(key) else ""
-        answer = getpass.getpass(f"{message}{keep}: ")
+        answer = prompts.secret(f"{message}{keep}")
         return self.set(key, answer or self.prev(key))
 
     def confirm(self, message: str, default: bool = False) -> bool:
-        answer = self._input(message + (" [Y/n] " if default else " [y/N] ")).lower()
-        return default if not answer else answer.startswith("y")
+        if self.defaults_only:
+            say(f"{message} [{'Y/n' if default else 'y/N'}]")
+            return default
+        return prompts.confirm(message, default)
 
     def keep(self, key: str, default: str = "") -> str:
         return self.set(key, self.prev(key, default))
@@ -217,7 +214,7 @@ class Wizard:
         elif register:
             say(f"Registering {service_name} SSO service with Hive at {hive_url}...")
             client_id, client_secret = hive.register_sso(
-                service_name, hive_url, redirect_uri, self.confirm, ask=self._input
+                service_name, hive_url, redirect_uri, self.confirm
             )
         self.set(id_key, client_id)
         self.set(secret_key, client_secret)

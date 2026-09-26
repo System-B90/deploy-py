@@ -129,6 +129,70 @@ def save_images(stage: Path, spec: AppSpec, tag: str, mode: str) -> list[str]:
     return saved
 
 
+# pip platform tag -> uv's --python-platform
+UV_PLATFORMS = {
+    "manylinux2014_x86_64": "x86_64-manylinux2014",
+    "win_amd64": "x86_64-pc-windows-msvc",
+}
+
+
+def _extra_links() -> list[str]:
+    """SB90_BUNDLE_FIND_LINKS: extra wheel dirs (os.pathsep-separated), e.g. a
+    local mirror, or fresh wheels the Pages CDN is not serving yet."""
+    extra = os.environ.get("SB90_BUNDLE_FIND_LINKS", "")
+    links: list[str] = []
+    for path in filter(None, extra.split(os.pathsep)):
+        links += ["--find-links", path]
+    return links
+
+
+def _uv() -> str:
+    from uv import find_uv_bin
+
+    return find_uv_bin()
+
+
+def lock_for(
+    requirements_file: Path, platform: str, python: str, wheels: Path, index: str, out: Path
+) -> Path:
+    """Resolve the full dependency set *as the target host sees it*.
+
+    `pip download --platform/--python-version` still evaluates environment
+    markers against the machine running it, so bundling on 3.13 dropped
+    `exceptiongroup; python_version < "3.11"` and bundling on Windows dropped
+    `SecretStorage; sys_platform == "linux"` — both only visible when the
+    air-gapped install failed. uv resolves for a named target environment.
+    """
+    subprocess.run(
+        [
+            _uv(),
+            "pip",
+            "compile",
+            "--quiet",
+            "--no-header",
+            "--no-annotate",
+            str(requirements_file),
+            "--python-version",
+            python,
+            "--python-platform",
+            UV_PLATFORMS.get(platform, platform),
+            "--only-binary",
+            ":all:",
+            "--find-links",
+            str(wheels),
+            *_extra_links(),
+            "--extra-index-url",
+            index,
+            "--index-strategy",
+            "unsafe-best-match",
+            "-o",
+            str(out),
+        ],
+        check=True,
+    )
+    return out
+
+
 def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Path) -> int:
     wheels = stage / "wheels"
     wheels.mkdir(exist_ok=True)
@@ -147,6 +211,14 @@ def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Pat
     for platform in platforms:
         for python in pythons:
             log("bundle", f"vendoring wheels for {platform} / Python {python}...")
+            lock = lock_for(
+                requirements_file,
+                platform,
+                python,
+                wheels,
+                spec.pip_index,
+                wheels.parent / f".lock-{platform}-{python}.txt",
+            )
             subprocess.run(
                 [
                     sys.executable,
@@ -154,8 +226,9 @@ def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Pat
                     "pip",
                     "download",
                     "--quiet",
+                    "--no-deps",
                     "-r",
-                    str(requirements_file),
+                    str(lock),
                     "pip",
                     "--only-binary=:all:",
                     "--platform",
@@ -164,6 +237,7 @@ def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Pat
                     python,
                     "--find-links",
                     str(wheels),
+                    *_extra_links(),
                     "--extra-index-url",
                     spec.pip_index,
                     "-d",
@@ -171,6 +245,7 @@ def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Pat
                 ],
                 check=True,
             )
+            lock.unlink()
     count = len(list(wheels.glob("*.whl")))
     if count <= len(local) + 1:
         raise Failure("offline bundle has no vendored wheels")
