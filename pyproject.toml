@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sb90-deploy"
+dynamic = ["version"]
+description = "Shared release bundling, install/upgrade and Hive-integration flows for System-B90 app deployments."
+readme = "README.md"
+# Ubuntu 22.04's stock python3. bootstrap.py (shipped in every bundle) itself
+# only needs 3.6 and builds the .venv this package is installed into.
+requires-python = ">=3.10"
+authors = [{ name = "Michael K. Steinberg", email = "m.kuper.steinberg@gmail.com" }]
+license = { text = "Proprietary" }
+dependencies = [
+    # From the org index (PyPI stops at 2.1.1). 3.10 support is in progress
+    # upstream in pyhive; until it lands, a 3.10-only host fails at the venv
+    # install step with a clear message.
+    "PyHiveLMS>=2.1.5",
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+lint = ["ruff==0.16.8", "vermin==1.6.0"]
+
+[project.scripts]
+sb90-deploy = "sb90_deploy.cli:main"
+
+[project.urls]
+Repository = "https://github.com/System-B90/deploy-py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sb90_deploy"]
+
+[tool.hatch.version]
+path = "sb90_deploy/__init__.py"
