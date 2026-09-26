@@ -144,6 +144,7 @@ and pushes nothing.
 
 ```
 python -m venv .venv && .venv/bin/pip install -e ".[dev,lint]" --extra-index-url https://system-b90.github.io/.github/pypi/
+pre-commit install        # ruff check --fix + ruff format on every commit, at CI's pinned version
 pytest -q && ruff check . && ruff format --check .
 vermin -t=3.6- --no-tips --violations sb90_deploy/templates/bootstrap.py
 ```

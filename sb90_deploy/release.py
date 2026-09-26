@@ -110,7 +110,7 @@ def update_manifests(root: Path, manifests: Sequence[Manifest], version: str) ->
 
 
 def _git(root: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         sys.exit(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result.stdout.strip()
