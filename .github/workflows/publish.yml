@@ -3,11 +3,21 @@ name: Publish to org pip index
 on:
     push:
         tags: ["v*"]
+    workflow_dispatch:
+        inputs:
+            runner:
+                description: 'Runner environment to execute on'
+                required: false
+                default: 'self-hosted'
+                type: choice
+                options:
+                    - self-hosted
+                    - github-hosted
 
 jobs:
     publish:
         name: Build and publish sb90-deploy
-        runs-on: ubuntu-latest
+        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "python"]') }}
         timeout-minutes: 20
 
         steps:
