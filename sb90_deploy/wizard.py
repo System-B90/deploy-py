@@ -83,10 +83,15 @@ class Wizard:
     def prev(self, key: str, default: str = "") -> str:
         return self.existing.get(key) or default
 
-    def ask(self, key: str | None, message: str, default: str = "") -> str:
+    def ask(self, key: str | None, message: str, default: str = "", required: bool = False) -> str:
         default = self.prev(key, default) if key else default
         suffix = f" [{default}]" if default else ""
         answer = self._input(f"{message}{suffix}: ") or default
+        while required and not answer:
+            if self.defaults_only:
+                raise SystemExit(f"{message}: required, and there is no default to use.")
+            say(paint("yellow", "  A value is required."))
+            answer = self._input(f"{message}: ")
         return self.set(key, answer) if key else answer
 
     def ask_secret(self, key: str, message: str) -> str:
@@ -119,7 +124,7 @@ class Wizard:
         if key:
             default = self.prev(key, default)
         message = message or f"Domain name for {self.display_name} (e.g. {example})"
-        domain = self.ask(key, message, default)
+        domain = self.ask(key, message, default, required=True)
         self._set_url(domain)
         self._domain = domain
         return domain

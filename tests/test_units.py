@@ -175,3 +175,15 @@ def test_tls_issues_and_then_reuses(tmp_path):
     assert (tmp_path / "cert.pem").read_bytes() == first
     tls.ensure_certificate(tmp_path, "other.test")
     assert tls.covers(tmp_path / "cert.pem", "other.test")
+
+
+def test_wizard_required_domain_fails_cleanly_without_default(tmp_path, monkeypatch):
+    import pytest
+
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    monkeypatch.setenv("SB90_WIZARD_DEFAULTS", "1")
+    w = Wizard(AppSpec(APP), env_path=str(tmp_path / ".env"))
+    with pytest.raises(SystemExit, match="required"):
+        w.domain()
