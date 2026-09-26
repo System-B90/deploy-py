@@ -1,0 +1,10 @@
+# Lint on commit with the same ruff CI pins (pyproject `lint` extra), not
+# whatever `ruff` is first on PATH. Setup: pip install -e ".[dev,lint]" &&
+# pre-commit install
+repos:
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.16.8
+      hooks:
+          - id: ruff-check
+            args: [--fix]
+          - id: ruff-format
