@@ -13,6 +13,14 @@ _COLORS = {
 }
 _RESET = "\033[0m"
 
+# Windows consoles and pipes default to a legacy code page; an app wizard's
+# emoji or an em-dash would otherwise raise UnicodeEncodeError mid-install.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def _use_color():
     if os.environ.get("NO_COLOR"):
