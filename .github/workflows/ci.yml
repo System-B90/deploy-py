@@ -28,10 +28,10 @@ jobs:
             matrix:
                 include:
                     - os: self-hosted
-                      runner: [self-hosted, python]
+                      runner: [self-hosted, Linux, python]
                       python: "3.11"
                     - os: self-hosted
-                      runner: [self-hosted, python]
+                      runner: [self-hosted, Linux, python]
                       python: "3.13"
                     - os: windows-latest
                       runner: windows-latest
@@ -61,7 +61,7 @@ jobs:
     # check its minimum version with vermin.
     bootstrap-py36:
         name: bootstrap.py on Python 3.6
-        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "dind"]') }}
+        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "dind"]') }}
         timeout-minutes: 10
         container: python:3.6-slim
         steps:
@@ -82,7 +82,7 @@ jobs:
     # python3 (3.10) and no python3-venv, so ensurepip is missing.
     bootstrap-jammy:
         name: bootstrap.py on Ubuntu 22.04 without python3-venv
-        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "dind"]') }}
+        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "dind"]') }}
         timeout-minutes: 10
         container: ubuntu:22.04
         steps:

@@ -17,7 +17,7 @@ on:
 jobs:
     publish:
         name: Build and publish sb90-deploy
-        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "python"]') }}
+        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "python"]') }}
         timeout-minutes: 20
 
         steps:
