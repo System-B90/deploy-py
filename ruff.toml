@@ -1,0 +1,7 @@
+line-length = 100
+target-version = "py310"
+
+[lint.per-file-ignores]
+# Shipped to hosts that may only have Python 3.6; vermin enforces that in CI.
+# EXE001: bootstrap.py has a shebang for bundle execution, but template in repo lacks +x.
+"sb90_deploy/templates/bootstrap.py" = ["UP", "EXE001"]

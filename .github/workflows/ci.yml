@@ -1,0 +1,84 @@
+name: CI
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+
+jobs:
+    # GitHub-hosted on purpose (see the org CLAUDE.md "Runners"): short, PR-only,
+    # and the Windows leg is real coverage — operators install on Windows too
+    # and the self-hosted pool is Linux-only.
+    test:
+        name: Lint and test (${{ matrix.os }}, py${{ matrix.python }})
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 15
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+                python: ["3.11", "3.13"]
+
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: ${{ matrix.python }}
+
+            - name: Install
+              run: python -m pip install --upgrade pip ".[dev,lint,bundle]" --extra-index-url https://system-b90.github.io/.github/pypi/
+
+            - name: Ruff
+              run: ruff check . && ruff format --check .
+
+            - name: Pytest
+              run: pytest -q
+
+    # bootstrap.py and the shims run on whatever Python the host has, which is
+    # only promised to be 3.6+. Parse-and-run it on a real 3.6, and statically
+    # check its minimum version with vermin.
+    bootstrap-py36:
+        name: bootstrap.py on Python 3.6
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        container: python:3.6-slim
+        steps:
+            - uses: actions/checkout@v7
+            - name: Run without a command (usage error, exit 1)
+              run: |
+                  set +e
+                  python sb90_deploy/templates/bootstrap.py
+                  test $? -eq 1
+            - name: Fails cleanly when no Python 3.10+ exists
+              run: |
+                  set +e
+                  python sb90_deploy/templates/bootstrap.py install 2>err.txt
+                  test $? -eq 1
+                  grep -q "Python 3.10+ is needed" err.txt
+
+    # The primary deployment target: air-gapped Ubuntu 22.04 with the stock
+    # python3 (3.10) and no python3-venv, so ensurepip is missing.
+    bootstrap-jammy:
+        name: bootstrap.py on Ubuntu 22.04 without python3-venv
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        container: ubuntu:22.04
+        steps:
+            - uses: actions/checkout@v7
+            - name: Install stock python3 only
+              run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip
+            - name: Stage a fake bundle with vendored wheels
+              run: |
+                  mkdir -p /opt/app/wheels /opt/app/sb90_deploy
+                  cp sb90_deploy/templates/bootstrap.py /opt/app/
+                  echo six > /opt/app/requirements.txt
+                  python3 -m pip download -q six pip -d /opt/app/wheels
+                  touch /opt/app/sb90_deploy/__init__.py
+                  printf 'import six, sys\nprint("RAN", sys.argv[1:])\n' > /opt/app/sb90_deploy/__main__.py
+                  apt-get remove -y -qq python3-pip >/dev/null
+            - name: Bootstrap offline
+              run: |
+                  cd /opt/app
+                  python3 bootstrap.py install | tee out.txt
+                  grep -q "RAN \['install'" out.txt
