@@ -62,7 +62,8 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
   "containers": {"ui": "bluz-ui", "proxy": "bluz-proxy"},
   "backup": {"sh": "backup/bluz-backup.sh", "ps1": "backup/bluz-backup.ps1",
              "restore_sh": "backup/bluz-restore.sh", "restore_ps1": "backup/bluz-restore.ps1",
-             "root": "/var/backups/bluz"},          // omit for stateless apps
+             "root": "/var/backups/bluz",
+             "root_windows": "%ProgramData%\bluz\backups"},          // omit for stateless apps
   "required_files": [],                // must exist after setup.py (peek-a-boo's token file)
   "state": ["nginx/ssl"],              // host state an upgrade never overwrites
   "venv_packages": ["bluz-cli"],       // operator tooling installed into .venv

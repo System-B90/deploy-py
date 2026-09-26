@@ -219,7 +219,9 @@ class Upgrade:
         )
         if subprocess.call(argv, env=env) != 0:
             raise self.abort("backup")
-        backup_root = self.spec.setting("BACKUP_DIR", self.spec.backup.get("root", ""))
+        root_key = "root_windows" if os.name == "nt" else "root"
+        default_root = os.path.expandvars(self.spec.backup.get(root_key, ""))
+        backup_root = self.spec.setting("BACKUP_DIR", default_root)
         if backup_root and os.path.isdir(backup_root):
             dumps = sorted(glob.glob(os.path.join(backup_root, "*", "*")))
             dumps = [p for p in dumps if os.path.isdir(p)]
