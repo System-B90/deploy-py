@@ -56,9 +56,7 @@ DEFAULT_PYTHONS = ["3.10", "3.11", "3.12", "3.13"]
 def _template(name: str) -> str:
     text = resources.files("sb90_deploy").joinpath("templates", name).read_text(encoding="utf-8")
     # A wheel built on Windows may carry CRLF; a shebang script must not.
-    return text.replace("
-", "
-")
+    return text.replace("\r\n", "\n")
 
 
 def _write(path: Path, text: str, executable: bool = False) -> None:
