@@ -61,8 +61,12 @@ LOCK = {
 
 
 def test_update_manifests(tmp_path: Path) -> None:
-    (tmp_path / "package.json").write_text('{\n    "version": "1.0.0"\n}\n', encoding="utf-8")
-    (tmp_path / "package-lock.json").write_text(json.dumps(LOCK, indent=4), encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        '{\n    "version": "1.0.0"\n}\n', encoding="utf-8"
+    )
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(LOCK, indent=4), encoding="utf-8"
+    )
     (tmp_path / "cli.py").write_text("__version__ = '1.0.0'\n", encoding="utf-8")
 
     updated = release.update_manifests(
@@ -84,7 +88,9 @@ def test_update_manifests(tmp_path: Path) -> None:
     lock = json.loads((tmp_path / "package-lock.json").read_text(encoding="utf-8"))
     assert lock["version"] == lock["packages"][""]["version"] == "1.1.0"
     assert lock["packages"]["node_modules/x"]["version"] == "9.9.9"
-    assert (tmp_path / "cli.py").read_text(encoding="utf-8") == '__version__ = "1.1.0"\n'
+    assert (tmp_path / "cli.py").read_text(
+        encoding="utf-8"
+    ) == '__version__ = "1.1.0"\n'
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -105,7 +111,11 @@ def _repo(tmp_path: Path, branch: str = "master") -> tuple[Path, Path]:
     origin, repo = tmp_path / "origin.git", tmp_path / "repo"
     _git(tmp_path, "init", "-q", "--bare", str(origin))
     _git(tmp_path, "init", "-q", "-b", branch, str(repo))
-    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
+    for key, value in (
+        ("user.name", "t"),
+        ("user.email", "t@t"),
+        ("commit.gpgsign", "false"),
+    ):
         _git(repo, "config", key, value)
     _git(repo, "remote", "add", "origin", str(origin))
     (repo / "deploy").mkdir()
@@ -122,10 +132,14 @@ def _repo(tmp_path: Path, branch: str = "master") -> tuple[Path, Path]:
 def test_publish_dry_run_commits_bump_and_drops_tag(tmp_path: Path) -> None:
     origin, repo = _repo(tmp_path)
 
-    code = cli.main(["publish", "--repo", str(repo), "--bump", "patch", "--no-rc", "-y", "--dry"])
+    code = cli.main(
+        ["publish", "--repo", str(repo), "--bump", "patch", "--no-rc", "-y", "--dry"]
+    )
 
     assert code == 0
-    assert (repo / "package.json").read_text(encoding="utf-8") == '{"version": "1.4.3"}\n'
+    assert (repo / "package.json").read_text(
+        encoding="utf-8"
+    ) == '{"version": "1.4.3"}\n'
     assert (repo / "v.py").read_text(encoding="utf-8") == '__version__ = "1.4.3"\n'
     assert _git(repo, "log", "-1", "--format=%s") == "chore: bump version to 1.4.3"
     assert _git(repo, "tag", "-l", "v1.4.3") == ""

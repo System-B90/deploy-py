@@ -39,15 +39,23 @@ def _parser() -> argparse.ArgumentParser:
     deployment_args(update)
     update.add_argument("--version", dest="version", help="target release tag")
     update.add_argument("--package", help="offline bundle (.tar.gz or extracted dir)")
-    update.add_argument("--pre-release", action="store_true", help="include prereleases")
-    update.add_argument("--skip-backup", action="store_true", help="accept no pre-upgrade dump")
-    update.add_argument("--yes", "-y", action="store_true", help="do not ask to proceed")
+    update.add_argument(
+        "--pre-release", action="store_true", help="include prereleases"
+    )
+    update.add_argument(
+        "--skip-backup", action="store_true", help="accept no pre-upgrade dump"
+    )
+    update.add_argument(
+        "--yes", "-y", action="store_true", help="do not ask to proceed"
+    )
 
     bundle = sub.add_parser("bundle", help="CI: craft release archives")
     bundle.add_argument("--app", default="deploy/app.json")
     bundle.add_argument("--tag", required=True)
     bundle.add_argument("--out", default="dist")
-    bundle.add_argument("--repo", help="repo root the bundle.files paths are relative to")
+    bundle.add_argument(
+        "--repo", help="repo root the bundle.files paths are relative to"
+    )
     bundle.add_argument("--images", choices=["pull", "local", "skip"], default="pull")
     bundle.add_argument("--no-wheels", action="store_true")
 
@@ -63,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "bundle":
             from .bundle import craft
 
-            craft(args.app, args.tag, args.out, args.repo, args.images, not args.no_wheels)
+            craft(
+                args.app, args.tag, args.out, args.repo, args.images, not args.no_wheels
+            )
             return 0
 
         if args.command == "publish":

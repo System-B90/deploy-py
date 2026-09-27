@@ -7,7 +7,9 @@ from conftest import make_bundle, run_cli
 
 def test_install_runs_wizard_pins_version_and_boots(tmp_path, calls):
     root = make_bundle(tmp_path / "b", "v3.1.0")
-    (root / "setup.py").write_text("open('.env', 'w').write('NEXTAUTH_URL=https://demo.test\\n')\n")
+    (root / "setup.py").write_text(
+        "open('.env', 'w').write('NEXTAUTH_URL=https://demo.test\\n')\n"
+    )
 
     assert run_cli("install", "--root", str(root)) == 0
 

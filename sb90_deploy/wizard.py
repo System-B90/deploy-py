@@ -79,12 +79,16 @@ class Wizard:
     def prev(self, key: str, default: str = "") -> str:
         return self.existing.get(key) or default
 
-    def ask(self, key: str | None, message: str, default: str = "", required: bool = False) -> str:
+    def ask(
+        self, key: str | None, message: str, default: str = "", required: bool = False
+    ) -> str:
         default = self.prev(key, default) if key else default
         answer = self._input(message, default)
         while required and not answer:
             if self.defaults_only:
-                raise SystemExit(f"{message}: required, and there is no default to use.")
+                raise SystemExit(
+                    f"{message}: required, and there is no default to use."
+                )
             say(paint("yellow", "  A value is required."))
             answer = self._input(message)
         return self.set(key, answer) if key else answer
@@ -121,7 +125,12 @@ class Wizard:
     ) -> str:
         """Domain for the app; sets NEXTAUTH_URL (port-aware once ports() ran)."""
         previous = self.existing.get("NEXTAUTH_URL", "")
-        from_url = previous.replace("https://", "").replace("http://", "").split(":")[0].rstrip("/")
+        from_url = (
+            previous.replace("https://", "")
+            .replace("http://", "")
+            .split(":")[0]
+            .rstrip("/")
+        )
         default = from_url or default
         if key:
             default = self.prev(key, default)
@@ -166,10 +175,14 @@ class Wizard:
                 )
             )
             http_port = self.ask(
-                None, f"HTTP port ({http_var})", http_port if http_port != "80" else "8080"
+                None,
+                f"HTTP port ({http_var})",
+                http_port if http_port != "80" else "8080",
             )
             https_port = self.ask(
-                None, f"HTTPS port ({https_var})", https_port if https_port != "443" else "8443"
+                None,
+                f"HTTPS port ({https_var})",
+                https_port if https_port != "443" else "8443",
             )
             bind_ip = self.ask(
                 None, f"Bind address ({bind_var}, 0.0.0.0 = all interfaces)", bind_ip
@@ -208,7 +221,9 @@ class Wizard:
         client_id, client_secret = self.prev(id_key), self.prev(secret_key)
         register = True
         if client_id and client_secret and client_id != hive.MANUAL:
-            register = self.confirm("Existing Hive SSO credentials found. Re-register?", False)
+            register = self.confirm(
+                "Existing Hive SSO credentials found. Re-register?", False
+            )
         if register and self.defaults_only:
             client_id = client_secret = hive.MANUAL
         elif register:
