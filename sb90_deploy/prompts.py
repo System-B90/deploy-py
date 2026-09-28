@@ -28,6 +28,26 @@ def text(message: str, default: str = "") -> str:
         return default
 
 
+def select(message: str, choices: list[tuple[str, str]], default: str) -> str:
+    """One of `choices` (value, label). Arrow-key menu on a terminal; otherwise
+    a typed value, falling back to `default` on empty input or EOF."""
+    if _interactive():
+        from InquirerPy import inquirer
+        from InquirerPy.base.control import Choice
+
+        return inquirer.select(
+            message=message,
+            choices=[Choice(value, name=label) for value, label in choices],
+            default=default,
+        ).execute()
+    values = "/".join(value for value, _ in choices)
+    try:
+        answer = input(f"{message} ({values}) [{default}]: ").strip().lower()
+    except EOFError:
+        return default
+    return answer or default
+
+
 def secret(message: str) -> str:
     if _interactive():
         from InquirerPy import inquirer

@@ -150,3 +150,42 @@ def test_publish_refuses_other_branches(tmp_path: Path) -> None:
     _, repo = _repo(tmp_path, branch="feature")
     with pytest.raises(SystemExit, match="Must be on master"):
         cli.main(["publish", "--repo", str(repo), "-y"])
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]:
+    """Feeds the non-terminal prompt fallback; records each question asked."""
+    asked: list[str] = []
+    replies = iter(answers)
+
+    def fake_input(question: str = "") -> str:
+        asked.append(question)
+        return next(replies)
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    return asked
+
+
+def test_publish_prompts_offer_each_bump_and_confirm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, repo = _repo(tmp_path)
+    asked = _answer(monkeypatch, "minor", "n", "y")
+
+    assert cli.main(["publish", "--repo", str(repo), "--dry"]) == 0
+
+    assert "(patch/minor/major) [patch]" in asked[0]
+    assert "Release candidate?" in asked[1]
+    assert "Publish v1.5.0 (v1.4.2 -> v1.5.0)?" in asked[2]
+    assert _git(repo, "log", "-1", "--format=%s") == "chore: bump version to 1.5.0"
+
+
+def test_publish_declined_confirmation_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, repo = _repo(tmp_path)
+    _answer(monkeypatch, "", "", "n")  # defaults: patch, no rc; then decline
+
+    with pytest.raises(SystemExit, match="Aborted"):
+        cli.main(["publish", "--repo", str(repo), "--dry"])
+
+    assert _git(repo, "log", "-1", "--format=%s") == "init"
