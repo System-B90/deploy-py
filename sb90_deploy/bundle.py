@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from collections.abc import Sequence
 from importlib import resources
 from pathlib import Path
 
@@ -219,8 +220,28 @@ def vendor_wheels(
         for match in matches:
             shutil.copy2(match, wheels)
             local.append(match)
-    platforms = spec.bundle.get("platforms", DEFAULT_PLATFORMS)
-    pythons = spec.bundle.get("pythons", DEFAULT_PYTHONS)
+    download_wheels(
+        requirements_file,
+        wheels,
+        spec.bundle.get("platforms", DEFAULT_PLATFORMS),
+        spec.bundle.get("pythons", DEFAULT_PYTHONS),
+        spec.pip_index,
+    )
+    count = len(list(wheels.glob("*.whl")))
+    if count <= len(local) + 1:
+        raise Failure("offline bundle has no vendored wheels")
+    return count
+
+
+def download_wheels(
+    requirements_file: Path,
+    wheels: Path,
+    platforms: Sequence[str],
+    pythons: Sequence[str],
+    index: str,
+) -> None:
+    """Every wheel `requirements_file` needs (plus pip) into `wheels`, for each
+    target platform/Python, resolved as that target sees it (see lock_for)."""
     # Strict on purpose: a dependency that stops publishing a wheel must fail
     # the release here, not on a customer's air-gapped machine.
     for platform in platforms:
@@ -231,7 +252,7 @@ def vendor_wheels(
                 platform,
                 python,
                 wheels,
-                spec.pip_index,
+                index,
                 wheels.parent / f".lock-{platform}-{python}.txt",
             )
             subprocess.run(
@@ -254,16 +275,59 @@ def vendor_wheels(
                     str(wheels),
                     *_extra_links(),
                     "--extra-index-url",
-                    spec.pip_index,
+                    index,
                     "-d",
                     str(wheels),
                 ],
                 check=True,
             )
             lock.unlink()
+
+
+DEFAULT_PIP_INDEX = "https://system-b90.github.io/.github/pypi/"
+
+
+def wheels_for_tool(
+    requirements: Sequence[str],
+    out: str,
+    platforms: Sequence[str],
+    pythons: Sequence[str],
+    project: str | None = None,
+    index: str = DEFAULT_PIP_INDEX,
+) -> int:
+    """`sb90_deploy wheels`: air-gapped wheels for a pip-installable tool (no
+    app.json, compose file or images), e.g. a Windows CLI. `project` also
+    builds that project's own wheel into the same directory."""
+    wheels = Path(out)
+    wheels.mkdir(parents=True, exist_ok=True)
+    combined = wheels / ".requirements.txt"
+    lines: list[str] = []
+    for requirements_file in requirements:
+        path = Path(requirements_file)
+        if not path.is_file():
+            raise Failure(f"requirements file not found: {requirements_file}")
+        lines.append(path.read_text(encoding="utf-8"))
+    combined.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        download_wheels(combined, wheels, platforms, pythons, index)
+    finally:
+        combined.unlink()
+    if project:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "-w",
+                str(wheels),
+                project,
+            ],
+            check=True,
+        )
     count = len(list(wheels.glob("*.whl")))
-    if count <= len(local) + 1:
-        raise Failure("offline bundle has no vendored wheels")
+    ok(f"{count} wheels in {wheels}")
     return count
 
 

@@ -59,6 +59,19 @@ def _parser() -> argparse.ArgumentParser:
     bundle.add_argument("--images", choices=["pull", "local", "skip"], default="pull")
     bundle.add_argument("--no-wheels", action="store_true")
 
+    wheels = sub.add_parser(
+        "wheels", help="air-gapped wheels for a pip-installable tool (no app.json)"
+    )
+    wheels.add_argument(
+        "-r", "--requirement", action="append", required=True, dest="requirements"
+    )
+    wheels.add_argument("--out", default="wheels")
+    wheels.add_argument("--project", help="also build this project's own wheel")
+    wheels.add_argument(
+        "--platform", action="append", dest="platforms", help="repeatable"
+    )
+    wheels.add_argument("--python", action="append", dest="pythons", help="repeatable")
+
     from .release import add_arguments
 
     add_arguments(sub.add_parser("publish", help="tag and push the next release"))
@@ -73,6 +86,18 @@ def main(argv: list[str] | None = None) -> int:
 
             craft(
                 args.app, args.tag, args.out, args.repo, args.images, not args.no_wheels
+            )
+            return 0
+
+        if args.command == "wheels":
+            from .bundle import DEFAULT_PLATFORMS, DEFAULT_PYTHONS, wheels_for_tool
+
+            wheels_for_tool(
+                args.requirements,
+                args.out,
+                args.platforms or DEFAULT_PLATFORMS,
+                args.pythons or DEFAULT_PYTHONS,
+                args.project,
             )
             return 0
 
