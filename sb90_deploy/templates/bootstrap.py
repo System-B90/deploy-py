@@ -69,7 +69,8 @@ def find_interpreter():
     fail(
         "Python %d.%d+ is needed for the deployment tools, but only older versions were found."
         % VENV_FLOOR,
-        "This host's Python (%d.%d) is enough to start, not to run them." % sys.version_info[:2],
+        "This host's Python (%d.%d) is enough to start, not to run them."
+        % sys.version_info[:2],
         "Ubuntu 22.04: the stock python3 (3.10) is enough; Windows: python.org 3.10+,",
         "then re-run. It is found automatically; nothing else needs to change.",
     )
@@ -101,15 +102,28 @@ def create_venv(interpreter):
     quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if subprocess.call(interpreter + ["-m", "venv", "--clear", VENV], **quiet) == 0:
         return
-    print("[WAIT] ensurepip unavailable (no python3-venv); using the bundled pip wheel...")
+    print(
+        "[WAIT] ensurepip unavailable (no python3-venv); using the bundled pip wheel..."
+    )
     pip_wheels = sorted(glob.glob(os.path.join(WHEELS, "pip-*.whl")))
     if (
         pip_wheels
-        and subprocess.call(interpreter + ["-m", "venv", "--clear", "--without-pip", VENV]) == 0
+        and subprocess.call(
+            interpreter + ["-m", "venv", "--clear", "--without-pip", VENV]
+        )
+        == 0
     ):
         env = dict(os.environ, PYTHONPATH=pip_wheels[-1])
         code = subprocess.call(
-            [venv_python(), "-m", "pip", "install", "--quiet", "--no-index", pip_wheels[-1]],
+            [
+                venv_python(),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-index",
+                pip_wheels[-1],
+            ],
             env=env,
         )
         if code == 0:
@@ -156,7 +170,10 @@ def ensure_venv(force=False):
 
 def main(argv):
     if sys.version_info < (3, 6):
-        fail("Python 3.6+ is required to run the installer (found %d.%d)." % sys.version_info[:2])
+        fail(
+            "Python 3.6+ is required to run the installer (found %d.%d)."
+            % sys.version_info[:2]
+        )
     if not argv or argv == ["--reinstall-venv"]:
         fail("usage: bootstrap.py install|update|link-hive|setup [args...]")
     python = ensure_venv(force="--reinstall-venv" in argv)

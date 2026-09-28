@@ -18,7 +18,11 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 CA_NAME = "System-B90 Local Dev CA"
@@ -35,7 +39,9 @@ def _write(path: Path, data: bytes, private: bool = False) -> None:
 
 
 def _key_pem(key) -> bytes:
-    return key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption())
+    return key.private_bytes(
+        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+    )
 
 
 def _name(common_name: str) -> x509.Name:
@@ -82,7 +88,9 @@ def load_or_create_ca(cert_path: Path, key_path: Path):
         .not_valid_after(now + timedelta(days=3650))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .add_extension(_usage(key_cert_sign=True, crl_sign=True), critical=True)
-        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+        )
         .sign(key, hashes.SHA256())
     )
     _write(cert_path, cert.public_bytes(Encoding.PEM))
@@ -91,7 +99,12 @@ def load_or_create_ca(cert_path: Path, key_path: Path):
 
 
 def issue_leaf(
-    cert_path: Path, key_path: Path, ca_cert, ca_key, hostname: str, alt_names: list[str]
+    cert_path: Path,
+    key_path: Path,
+    ca_cert,
+    ca_key,
+    hostname: str,
+    alt_names: list[str],
 ) -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     sans: list[x509.GeneralName] = []
@@ -111,11 +124,16 @@ def issue_leaf(
         # 397 days: the longest leaf lifetime browsers accept.
         .not_valid_after(now + timedelta(days=397))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(_usage(digital_signature=True, key_encipherment=True), critical=True)
-        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(
+            _usage(digital_signature=True, key_encipherment=True), critical=True
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
+        )
         .add_extension(x509.SubjectAlternativeName(sans), critical=False)
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            critical=False,
         )
         .sign(ca_key, hashes.SHA256())
     )

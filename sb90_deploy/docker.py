@@ -39,10 +39,12 @@ def run(argv, check=True, capture=False, env=None, cwd=None, quiet=False):
         result = subprocess.run(argv, check=False, **kwargs)
     except OSError as error:
         if check:
-            raise Failure(f"Could not run {argv[0]}: {error}")
+            raise Failure(f"Could not run {argv[0]}: {error}") from error
         return subprocess.CompletedProcess(argv, 127, "", str(error))
     if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, argv, result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(
+            result.returncode, argv, result.stdout, result.stderr
+        )
     return result
 
 
@@ -134,17 +136,25 @@ class Compose:
         return self.run(*args, **kwargs).returncode == 0
 
     def running_count(self):
-        result = self.run("ps", "--status", "running", "--quiet", check=False, capture=True)
-        return len([line for line in (result.stdout or "").splitlines() if line.strip()])
+        result = self.run(
+            "ps", "--status", "running", "--quiet", check=False, capture=True
+        )
+        return len(
+            [line for line in (result.stdout or "").splitlines() if line.strip()]
+        )
 
     def service_image(self, service):
-        result = self.run("ps", "--format", "{{.Image}}", service, check=False, capture=True)
+        result = self.run(
+            "ps", "--format", "{{.Image}}", service, check=False, capture=True
+        )
         lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
         return lines[-1].strip() if lines else ""
 
     def exec_node(self, service, script):
         """Run a node one-liner in `service`; returns (ok, parsed JSON or raw text)."""
-        result = self.run("exec", "-T", service, "node", "-e", script, check=False, capture=True)
+        result = self.run(
+            "exec", "-T", service, "node", "-e", script, check=False, capture=True
+        )
         body = (result.stdout or "").strip()
         try:
             parsed = json.loads(body) if body else None

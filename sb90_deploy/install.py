@@ -26,7 +26,9 @@ def run_setup(deployment: Deployment) -> None:
     """Run the app's own setup.py wizard with this venv's interpreter."""
     setup = os.path.join(deployment.root, "setup.py")
     if not os.path.isfile(setup):
-        raise Failure(f"setup.py not found in {deployment.root}.", "The bundle is incomplete.")
+        raise Failure(
+            f"setup.py not found in {deployment.root}.", "The bundle is incomplete."
+        )
     wait("Initializing environment configuration wizard...")
     code = subprocess.call([sys.executable, setup], cwd=deployment.root)
     if code != 0 or not os.path.isfile(deployment.env_file):
@@ -49,7 +51,10 @@ def _bindable(address: str) -> bool:
         try:
             sock.bind((address, 0))
         except OSError as error:
-            return error.errno not in (errno.EADDRNOTAVAIL, 10049)  # 10049: WSAEADDRNOTAVAIL
+            return error.errno not in (
+                errno.EADDRNOTAVAIL,
+                10049,
+            )  # 10049: WSAEADDRNOTAVAIL
     return True
 
 
@@ -144,7 +149,9 @@ def install(deployment: Deployment, args) -> int:
     # compose resolves it on EVERY invocation, so without this the next restart
     # or upgrade falls back to a network that does not exist (Bluz#454).
     if os.environ.get("HIVE_NETWORK_NAME"):
-        envfile.set_value(deployment.env_file, "HIVE_NETWORK_NAME", os.environ["HIVE_NETWORK_NAME"])
+        envfile.set_value(
+            deployment.env_file, "HIVE_NETWORK_NAME", os.environ["HIVE_NETWORK_NAME"]
+        )
 
     compose = deployment.compose()
     wait("Validating compose configuration...")
@@ -177,7 +184,12 @@ def install(deployment: Deployment, args) -> int:
     # SSO registration is the one setup step with a manual fallback; leaving the
     # placeholder in place silently means sign-in is broken post-install.
     if "MANUAL_ENTRY_REQUIRED" in deployment.env().values():
-        say(paint("red", "\n[ACTION REQUIRED] Hive SSO is NOT configured - sign-in will fail."))
+        say(
+            paint(
+                "red",
+                "\n[ACTION REQUIRED] Hive SSO is NOT configured - sign-in will fail.",
+            )
+        )
         say("  .env still contains MANUAL_ENTRY_REQUIRED placeholders.")
         say("  Re-run the wizard to retry registration:  python3 bootstrap.py setup")
     say("\nTo stop the system, run: docker compose down")
