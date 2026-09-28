@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import console, prompts
 from .spec import AppSpec
 
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-rc\.?(\d+))?$")
@@ -104,14 +105,14 @@ def update_manifests(
     for manifest in manifests:
         path = root / manifest.path
         if not path.is_file():
-            print(f"warning: {manifest.path} not found, skipping")
+            console.warn(f"{manifest.path} not found, skipping")
             continue
         text = path.read_text(encoding="utf-8")
         new_text, replaced = re.subn(
             manifest.pattern, rf'\g<1>"{version}"', text, count=manifest.count
         )
         if not replaced:
-            print(f"warning: no version in {manifest.path}, skipping")
+            console.warn(f"no version in {manifest.path}, skipping")
             continue
         path.write_text(new_text, encoding="utf-8")
         updated.append(manifest.path)
@@ -125,10 +126,6 @@ def _git(root: Path, *args: str) -> str:
     if result.returncode != 0:
         sys.exit(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result.stdout.strip()
-
-
-def _ask(message: str, default: str) -> str:
-    return input(f"{message} [{default}]: ").strip().lower() or default
 
 
 def _repo_url(root: Path) -> str | None:
@@ -175,7 +172,8 @@ def publish(args: argparse.Namespace) -> int:
 
     _git(root, "fetch", "--tags", "origin")
     current = latest(_git(root, "tag", "-l", "v*").splitlines())
-    print(f"{spec.display_name}: current version v{current}")
+    console.banner(f"{spec.display_name} release")
+    console.info(f"Current version: {console.paint('cyan', f'v{current}')}")
 
     if args.version:
         new = Version.parse(args.version)
@@ -186,18 +184,24 @@ def publish(args: argparse.Namespace) -> int:
                 f"v{new} is not newer than v{current}; pass --force to publish it anyway."
             )
     else:
-        bump = args.bump or _ask("Bump (patch/minor/major)", "patch")
+        bump = args.bump or prompts.select(
+            "Bump",
+            [(b, f"{b:<6} -> v{next_version(current, b, False)}") for b in BUMPS],
+            "patch",
+        )
         if bump not in BUMPS:
             sys.exit(f"Bump must be one of {', '.join(BUMPS)}.")
         rc = (
             args.rc
             if args.rc is not None
-            else _ask("Release candidate? (y/n)", "n") == "y"
+            else prompts.confirm("Release candidate?", default=False)
         )
         new = next_version(current, bump, rc)
 
     tag = f"v{new}"
-    if not args.yes and _ask(f"Publish {tag}? (y/n)", "y") != "y":
+    if not args.yes and not prompts.confirm(
+        f"Publish {tag} (v{current} -> v{new})?", default=True
+    ):
         sys.exit("Aborted.")
 
     updated = update_manifests(root, manifests, str(new))
@@ -208,12 +212,15 @@ def publish(args: argparse.Namespace) -> int:
 
     if args.dry:
         _git(root, "tag", "-d", tag)
-        print(f"Dry run: bump committed locally, nothing pushed, tag {tag} deleted.")
+        console.ok(
+            f"Dry run: bump committed locally, nothing pushed, tag {tag} deleted."
+        )
         return 0
     _git(root, "push", "origin", branch)
     _git(root, "push", "origin", tag)
-    print(f"Published {tag}.")
+    console.ok(f"Published {console.paint('green', tag)}.")
     url = _repo_url(root)
     if url:
-        print(f"  {url}/releases/tag/{tag}\n  {url}/actions")
+        console.info(f"Release:  {url}/releases/tag/{tag}")
+        console.info(f"Pipeline: {url}/actions")
     return 0
