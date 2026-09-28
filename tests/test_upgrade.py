@@ -25,7 +25,9 @@ def test_offline_package_loads_every_image_refreshes_bundle_and_rolls(
     assert "load -i " + str(package / "images" / "nginx.tar") in joined
     # bundle files replaced, previous copies kept
     assert (deployment / "install.sh").read_text() == "# install v2.0.0\n"
-    assert (deployment / ".bundle-bak-v1.0.0" / "install.sh").read_text() == "# install v1.0.0\n"
+    assert (
+        deployment / ".bundle-bak-v1.0.0" / "install.sh"
+    ).read_text() == "# install v1.0.0\n"
     # host state untouched, version persisted, env backed up
     assert (deployment / "nginx" / "ssl" / "cert.pem").read_text() == "old-cert\n"
     env = (deployment / ".env").read_text()
@@ -57,20 +59,26 @@ def test_rejects_the_online_bundle(deployment, tmp_path, calls, capsys):
     assert (deployment / "install.sh").read_text() == "# install v1.0.0\n"
 
 
-def test_rejects_a_package_holding_the_running_version(deployment, tmp_path, calls, capsys):
+def test_rejects_a_package_holding_the_running_version(
+    deployment, tmp_path, calls, capsys
+):
     package = make_bundle(tmp_path / "pkg", "v1.0.0", with_images=True)
     assert _update(deployment, "--package", str(package)) == 1
     assert "Already running v1.0.0" in capsys.readouterr().out
 
 
-def test_package_and_version_are_mutually_exclusive(deployment, tmp_path, calls, capsys):
+def test_package_and_version_are_mutually_exclusive(
+    deployment, tmp_path, calls, capsys
+):
     package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
     assert _update(deployment, "--package", str(package), "--version", "v2.0.0") == 1
     assert "cannot be combined" in capsys.readouterr().out
     assert calls.all() == []
 
 
-def test_missing_package_path_fails_before_touching_anything(deployment, tmp_path, calls):
+def test_missing_package_path_fails_before_touching_anything(
+    deployment, tmp_path, calls
+):
     assert _update(deployment, "--package", str(tmp_path / "nope.tar.gz")) == 1
     assert not any(" load " in c for c in calls.joined())
     assert not (deployment / ".bundle-bak-v1.0.0").exists()

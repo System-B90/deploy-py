@@ -102,7 +102,9 @@ class Upgrade:
 
     def _manifest_tag(self, root: str) -> str:
         """Older offline bundles had no VERSION; read the own image's tag from its archive."""
-        for archive in sorted(glob.glob(os.path.join(root, "images", f"{self.spec.name}-*.tar"))):
+        for archive in sorted(
+            glob.glob(os.path.join(root, "images", f"{self.spec.name}-*.tar"))
+        ):
             try:
                 with tarfile.open(archive) as tar:
                     manifest = json.load(tar.extractfile("manifest.json"))
@@ -125,7 +127,7 @@ class Upgrade:
                 raise Failure(
                     f"Could not extract {path}: {error}",
                     f"Expected the release's {self.spec.offline_archive('<tag>')}.",
-                )
+                ) from error
         else:
             raise Failure(
                 f"Package not found: {path}",
@@ -160,7 +162,9 @@ class Upgrade:
         ok(f"offline package: {self.target} ({root})")
 
     def _github(self, url: str) -> object:
-        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        request = urllib.request.Request(
+            url, headers={"Accept": "application/vnd.github+json"}
+        )
         with urllib.request.urlopen(request, timeout=15) as response:
             return json.load(response)
 
@@ -236,17 +240,23 @@ class Upgrade:
             )
             # Every archive, not just ours: a release may move the DB pins and
             # the new tag then exists nowhere on an air-gapped host but here.
-            for archive in sorted(glob.glob(os.path.join(self.package_root, "images", "*.tar"))):
+            for archive in sorted(
+                glob.glob(os.path.join(self.package_root, "images", "*.tar"))
+            ):
                 log(self.spec.name, f"  {os.path.basename(archive)}")
                 try:
                     docker.load_image(archive)
-                except Failure:
-                    raise self.abort(f"loading {os.path.basename(archive)}")
+                except Failure as error:
+                    raise self.abort(f"loading {os.path.basename(archive)}") from error
             ok("images loaded")
-            with open(os.path.join(self.package_root, COMPOSE_FILE), encoding="utf-8") as handle:
+            with open(
+                os.path.join(self.package_root, COMPOSE_FILE), encoding="utf-8"
+            ) as handle:
                 own = [
                     r
-                    for r, mine in compose_images(handle.read(), self.spec.version_var, self.target)
+                    for r, mine in compose_images(
+                        handle.read(), self.spec.version_var, self.target
+                    )
                     if mine
                 ]
             for reference in own:
@@ -254,10 +264,14 @@ class Upgrade:
                     raise self.abort(
                         f"package verification: {reference} is not among the loaded images"
                     )
-            ok(f"all {len(own)} {self.spec.display_name} images present at {self.target}")
+            ok(
+                f"all {len(own)} {self.spec.display_name} images present at {self.target}"
+            )
             return
 
-        log(self.spec.name, f"pulling {self.target} images (containers keep running)...")
+        log(
+            self.spec.name, f"pulling {self.target} images (containers keep running)..."
+        )
         if not self.compose.ok("pull", env={self.spec.version_var: self.target}):
             raise self.abort("image pull")
         ok("images pulled")
@@ -272,11 +286,14 @@ class Upgrade:
         self.scratch.append(scratch)
         archive = os.path.join(scratch, name)
         try:
-            with urllib.request.urlopen(url, timeout=60) as response, open(archive, "wb") as out:
+            with (
+                urllib.request.urlopen(url, timeout=60) as response,
+                open(archive, "wb") as out,
+            ):
                 shutil.copyfileobj(response, out)
             self.package_root = self._descend(self._extract(archive))
-        except (OSError, tarfile.TarError, Failure):
-            raise self.abort(f"downloading {name}")
+        except (OSError, tarfile.TarError, Failure) as error:
+            raise self.abort(f"downloading {name}") from error
         if not os.path.isfile(os.path.join(self.package_root, "setup.py")):
             raise self.abort(f"{name} did not contain the expected bundle layout")
 
@@ -294,7 +311,10 @@ class Upgrade:
         never touched. Previous copies go to .bundle-bak-<previous>.
         """
         self.bundle_backup = os.path.join(self.d.root, f".bundle-bak-{self.previous}")
-        log(self.spec.name, f"refreshing bundle files (previous copies -> {self.bundle_backup})...")
+        log(
+            self.spec.name,
+            f"refreshing bundle files (previous copies -> {self.bundle_backup})...",
+        )
         os.makedirs(self.bundle_backup, exist_ok=True)
         for directory, subdirs, files in os.walk(self.package_root):
             rel_dir = os.path.relpath(directory, self.package_root)
@@ -321,8 +341,8 @@ class Upgrade:
                     # New inode, never an in-place overwrite of a running script.
                     shutil.copy2(source, live + ".new")
                     os.replace(live + ".new", live)
-                except OSError:
-                    raise self.abort(f"installing {relative}")
+                except OSError as error:
+                    raise self.abort(f"installing {relative}") from error
         for name in _DIRECTORIES:
             source = os.path.join(self.package_root, name)
             if not os.path.isdir(source):
@@ -332,8 +352,8 @@ class Upgrade:
                 if os.path.isdir(live):
                     shutil.move(live, os.path.join(self.bundle_backup, name))
                 shutil.copytree(source, live)
-            except OSError:
-                raise self.abort(f"installing {name}/")
+            except OSError as error:
+                raise self.abort(f"installing {name}/") from error
         ok("bundle files refreshed")
         # .venv is rebuilt from the new wheels by bootstrap.py on its next run
         # (it stamps what it installed); nudge it now so tools match (Bluz#672).
@@ -342,7 +362,9 @@ class Upgrade:
             log(self.spec.name, "refreshing .venv from the new bundle...")
             code = subprocess.call([sys.executable, bootstrap, "--venv-only"])
             if code != 0:
-                warn("could not refresh .venv - it will be rebuilt on the next ./update.sh run")
+                warn(
+                    "could not refresh .venv - it will be rebuilt on the next ./update.sh run"
+                )
 
     def roll(self) -> None:
         """Service by service, each healthy before the next. ui first (it runs
@@ -368,7 +390,7 @@ class Upgrade:
         retries = int(self.spec.setting("HEALTH_RETRIES", "30"))
         script = HEALTH_SCRIPT % json.dumps(self.spec.health_url)
         body = None
-        for attempt in range(retries):
+        for _attempt in range(retries):
             healthy, body = self.compose.exec_node(self.spec.health_service, script)
             if healthy:
                 break
@@ -440,7 +462,8 @@ class Upgrade:
         log(spec.name, f"upgrade {self.previous} -> {self.target}")
         log(
             spec.name,
-            "mode         : " + (f"offline ({args.package})" if args.package else "online"),
+            "mode         : "
+            + (f"offline ({args.package})" if args.package else "online"),
         )
         log(spec.name, f"install dir  : {self.d.root}")
         log(spec.name, "compose files: " + ", ".join(self.d.compose_files()))
@@ -448,7 +471,11 @@ class Upgrade:
             log(
                 spec.name,
                 "backup       : "
-                + ("DISABLED (--skip-backup)" if not do_backup else self._backup_script()),
+                + (
+                    "DISABLED (--skip-backup)"
+                    if not do_backup
+                    else self._backup_script()
+                ),
             )
         say()
         if not confirm("Proceed?", default=False, assume_yes=args.yes):
@@ -458,7 +485,9 @@ class Upgrade:
         if do_backup:
             self.run_backup()
         elif spec.backup:
-            warn("skipping backup (--skip-backup): a failed migration will not be recoverable")
+            warn(
+                "skipping backup (--skip-backup): a failed migration will not be recoverable"
+            )
         self.fetch_images()
         self.refresh_bundle()
         self.roll()

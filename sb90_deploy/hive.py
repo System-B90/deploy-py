@@ -51,7 +51,9 @@ def password_client(hive_url: str, reason: str = "", verify: bool = False):
     say("Sign in with a Hive account that can register SSO applications.")
     username = prompts.text("Hive username")
     password = prompts.secret("Hive password")
-    return _client_class()(username=username, password=password, hive_url=hive_url, verify=verify)
+    return _client_class()(
+        username=username, password=password, hive_url=hive_url, verify=verify
+    )
 
 
 def api_client(hive_url: str, username: str, password: str, verify: bool = False):
@@ -87,7 +89,8 @@ def register_sso(
         attempts.append(lambda: HiveClient.from_sso(hive_url=hive_url, verify=False))
         attempts.append(
             lambda: password_client(
-                hive_url, "Browser sign-in did not complete. Falling back to username/password."
+                hive_url,
+                "Browser sign-in did not complete. Falling back to username/password.",
             )
         )
     else:
@@ -117,7 +120,12 @@ def register_sso(
             say(paint("yellow", f"  Attempt failed: {error}"))
 
     say(paint("red", f"\nFailed to register Hive SSO: {last_error}"))
-    say(paint("red", "Sign-in will NOT work until HIVE_CLIENT_ID and HIVE_CLIENT_SECRET are set."))
+    say(
+        paint(
+            "red",
+            "Sign-in will NOT work until HIVE_CLIENT_ID and HIVE_CLIENT_SECRET are set.",
+        )
+    )
     say(
         "\nRegister by hand instead (this uses the same working endpoint):\n"
         f"    pip install PyHiveLMS --index-url {INDEX}\n"

@@ -54,7 +54,11 @@ DEFAULT_PYTHONS = ["3.10", "3.11", "3.12", "3.13"]
 
 
 def _template(name: str) -> str:
-    text = resources.files("sb90_deploy").joinpath("templates", name).read_text(encoding="utf-8")
+    text = (
+        resources.files("sb90_deploy")
+        .joinpath("templates", name)
+        .read_text(encoding="utf-8")
+    )
     # A wheel built on Windows may carry CRLF; a shebang script must not.
     return text.replace("\r\n", "\n")
 
@@ -89,7 +93,9 @@ def populate(stage: Path, spec: AppSpec, spec_path: Path, repo: Path, tag: str) 
     _write(stage / VERSION_FILE, tag + "\n")
     _write(stage / "requirements.txt", requirements(spec))
     _write(stage / "bootstrap.py", _template("bootstrap.py"), executable=True)
-    commands = ["install", "update"] + (["link-hive"] if (stage / OVERLAY_FILE).exists() else [])
+    commands = ["install", "update"] + (
+        ["link-hive"] if (stage / OVERLAY_FILE).exists() else []
+    )
     for command in commands:
         _write(stage / f"{command}.sh", _template("shim.sh"), executable=True)
         _write(stage / f"{command}.ps1", _template("shim.ps1"))
@@ -105,7 +111,9 @@ def guard(stage: Path) -> None:
             f"{stage.name}: no {COMPOSE_FILE} (map deploy/docker-compose.release.yml to it)"
         )
     if "../" in compose.read_text(encoding="utf-8"):
-        raise Failure(f"{stage.name}: {COMPOSE_FILE} references ../ - that is the dev compose file")
+        raise Failure(
+            f"{stage.name}: {COMPOSE_FILE} references ../ - that is the dev compose file"
+        )
     if not (stage / SETUP_SCRIPT).exists():
         raise Failure(f"{stage.name}: no {SETUP_SCRIPT} in the bundle")
 
@@ -153,7 +161,12 @@ def _uv() -> str:
 
 
 def lock_for(
-    requirements_file: Path, platform: str, python: str, wheels: Path, index: str, out: Path
+    requirements_file: Path,
+    platform: str,
+    python: str,
+    wheels: Path,
+    index: str,
+    out: Path,
 ) -> Path:
     """Resolve the full dependency set *as the target host sees it*.
 
@@ -193,7 +206,9 @@ def lock_for(
     return out
 
 
-def vendor_wheels(stage: Path, spec: AppSpec, repo: Path, requirements_file: Path) -> int:
+def vendor_wheels(
+    stage: Path, spec: AppSpec, repo: Path, requirements_file: Path
+) -> int:
     wheels = stage / "wheels"
     wheels.mkdir(exist_ok=True)
     local = []
@@ -295,12 +310,16 @@ def craft(
             if flavour == "offline":
                 save_images(stage, spec, tag, images)
                 if wheels:
-                    count = vendor_wheels(stage, spec, repo_root, stage / "requirements.txt")
+                    count = vendor_wheels(
+                        stage, spec, repo_root, stage / "requirements.txt"
+                    )
                     ok(f"vendored {count} wheels")
                 else:
                     warn("wheels skipped - the air-gapped install path will fail")
             archive = out_dir / (
-                spec.online_archive(tag) if flavour == "online" else spec.offline_archive(tag)
+                spec.online_archive(tag)
+                if flavour == "online"
+                else spec.offline_archive(tag)
             )
             pack(parent, spec, archive)
             archives.append(archive)

@@ -68,7 +68,9 @@ class Manifest:
         """app.json form: "package.json", or {"path", "format": json|python, "count"}."""
         if isinstance(entry, str):
             return cls(entry)
-        return cls(entry["path"], PATTERNS[entry.get("format", "json")], entry.get("count", 1))
+        return cls(
+            entry["path"], PATTERNS[entry.get("format", "json")], entry.get("count", 1)
+        )
 
 
 def latest(tags: Sequence[str]) -> Version:
@@ -78,7 +80,12 @@ def latest(tags: Sequence[str]) -> Version:
 
 def next_version(current: Version, bump: str, rc: bool) -> Version:
     """patch on an rc finishes that rc's version instead of skipping past it."""
-    major, minor, patch, cur_rc = current.major, current.minor, current.patch, current.rc
+    major, minor, patch, cur_rc = (
+        current.major,
+        current.minor,
+        current.patch,
+        current.rc,
+    )
     if bump == "major":
         major, minor, patch, cur_rc = major + 1, 0, 0, None
     elif bump == "minor":
@@ -89,7 +96,9 @@ def next_version(current: Version, bump: str, rc: bool) -> Version:
     return Version(major, minor, patch, new_rc)
 
 
-def update_manifests(root: Path, manifests: Sequence[Manifest], version: str) -> list[str]:
+def update_manifests(
+    root: Path, manifests: Sequence[Manifest], version: str
+) -> list[str]:
     """Rewrites each manifest in place; returns the paths that changed."""
     updated = []
     for manifest in manifests:
@@ -110,7 +119,9 @@ def update_manifests(root: Path, manifests: Sequence[Manifest], version: str) ->
 
 
 def _git(root: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["git", *args], cwd=root, capture_output=True, text=True, check=False
+    )
     if result.returncode != 0:
         sys.exit(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result.stdout.strip()
@@ -127,16 +138,26 @@ def _repo_url(root: Path) -> str | None:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--app", default="deploy/app.json", help="app.json, relative to --repo")
+    parser.add_argument(
+        "--app", default="deploy/app.json", help="app.json, relative to --repo"
+    )
     parser.add_argument("--repo", default=".", help="repo root (default: cwd)")
     parser.add_argument("--bump", choices=BUMPS, help="skip the bump prompt")
-    parser.add_argument("--rc", action=argparse.BooleanOptionalAction, help="release candidate")
+    parser.add_argument(
+        "--rc", action=argparse.BooleanOptionalAction, help="release candidate"
+    )
     parser.add_argument(
         "--version", dest="version", help="explicit version instead of the derived one"
     )
-    parser.add_argument("--force", action="store_true", help="allow --version <= latest tag")
-    parser.add_argument("--yes", "-y", action="store_true", help="skip the confirmation")
-    parser.add_argument("--dry", action="store_true", help="commit and tag locally, push nothing")
+    parser.add_argument(
+        "--force", action="store_true", help="allow --version <= latest tag"
+    )
+    parser.add_argument(
+        "--yes", "-y", action="store_true", help="skip the confirmation"
+    )
+    parser.add_argument(
+        "--dry", action="store_true", help="commit and tag locally, push nothing"
+    )
 
 
 def publish(args: argparse.Namespace) -> int:
@@ -161,12 +182,18 @@ def publish(args: argparse.Namespace) -> int:
         if new is None:
             sys.exit(f"--version {args.version} is not semver.")
         if new.sort_key() <= current.sort_key() and not args.force:
-            sys.exit(f"v{new} is not newer than v{current}; pass --force to publish it anyway.")
+            sys.exit(
+                f"v{new} is not newer than v{current}; pass --force to publish it anyway."
+            )
     else:
         bump = args.bump or _ask("Bump (patch/minor/major)", "patch")
         if bump not in BUMPS:
             sys.exit(f"Bump must be one of {', '.join(BUMPS)}.")
-        rc = args.rc if args.rc is not None else _ask("Release candidate? (y/n)", "n") == "y"
+        rc = (
+            args.rc
+            if args.rc is not None
+            else _ask("Release candidate? (y/n)", "n") == "y"
+        )
         new = next_version(current, bump, rc)
 
     tag = f"v{new}"

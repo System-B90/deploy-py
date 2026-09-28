@@ -25,7 +25,7 @@ dependencies = [
 # Release bundling only (CI): uv resolves wheels per target platform/Python.
 bundle = ["uv>=0.5.0"]
 dev = ["pytest>=8.0.0"]
-lint = ["ruff==0.16.8", "vermin==1.6.0", "pre-commit>=4.0.0"]
+lint = ["ruff==0.16.9", "vermin==1.6.0", "pre-commit>=4.0.0"]
 
 [project.scripts]
 sb90-deploy = "sb90_deploy.cli:main"

@@ -47,7 +47,9 @@ class AppSpec:
         self.state = list(data.get("state", ["nginx/ssl"]))
         # Operator tooling installed into the bundle's .venv (e.g. bluz-cli).
         self.venv_packages = list(data.get("venv_packages", []))
-        self.pip_index = data.get("pip_index", "https://system-b90.github.io/.github/pypi/")
+        self.pip_index = data.get(
+            "pip_index", "https://system-b90.github.io/.github/pypi/"
+        )
         # Extra lines printed after a successful install.
         self.post_install = list(data.get("post_install", []))
 

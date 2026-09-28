@@ -62,7 +62,9 @@ def find_nginx(network: str, own_prefix: str) -> str:
 def ensure_alias(network: str, container: str, hostname: str) -> None:
     wait(f"Aliasing {hostname} onto {container}...")
     template = "{{range .NetworkSettings.Networks}}{{range .Aliases}}{{println .}}{{end}}{{end}}"
-    result = docker.docker("inspect", container, "--format", template, check=False, capture=True)
+    result = docker.docker(
+        "inspect", container, "--format", template, check=False, capture=True
+    )
     if hostname in (result.stdout or "").split():
         ok("Alias already present - nothing to do.")
         return

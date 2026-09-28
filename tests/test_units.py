@@ -13,7 +13,10 @@ from sb90_deploy.spec import compose_images, image_archive_name
 
 def test_envfile_round_trip_quotes_only_when_needed(tmp_path):
     path = str(tmp_path / ".env")
-    envfile.write(path, {"A": "plain", "B": "has space", "C": "d$ollar", "D": "it's", "E": "x==/+"})
+    envfile.write(
+        path,
+        {"A": "plain", "B": "has space", "C": "d$ollar", "D": "it's", "E": "x==/+"},
+    )
     text = (tmp_path / ".env").read_text()
     assert "A=plain\n" in text and "B='has space'" in text and "C='d$ollar'" in text
     assert "E=x==/+" in text
@@ -44,10 +47,13 @@ def test_compose_images_resolves_own_tag_and_defaults():
 
 
 def test_archive_names():
-    assert image_archive_name("ghcr.io/system-b90/bluz/ui:v1", True, "bluz") == "bluz-ui.tar"
-    assert image_archive_name("mongodb/mongodb-community-server:8.0", False, "bluz") == (
-        "mongodb-community-server.tar"
+    assert (
+        image_archive_name("ghcr.io/system-b90/bluz/ui:v1", True, "bluz")
+        == "bluz-ui.tar"
     )
+    assert image_archive_name(
+        "mongodb/mongodb-community-server:8.0", False, "bluz"
+    ) == ("mongodb-community-server.tar")
 
 
 def test_bundle_crafts_both_flavours_with_bootstrap_and_shims(tmp_path):
@@ -114,7 +120,10 @@ def test_bundle_guard_rejects_dev_compose(tmp_path):
     (repo / "deploy" / "dc.yml").write_text("services:\n  ui:\n    env_file: ../.env\n")
     (repo / "setup.py").write_text("")
     app = dict(
-        APP, bundle={"files": {"docker-compose.yml": "deploy/dc.yml", "setup.py": "setup.py"}}
+        APP,
+        bundle={
+            "files": {"docker-compose.yml": "deploy/dc.yml", "setup.py": "setup.py"}
+        },
     )
     (repo / "deploy" / "app.json").write_text(json.dumps(app))
     try:
@@ -162,7 +171,9 @@ def test_wizard_keeps_secrets_and_foreign_keys(tmp_path, monkeypatch):
     values = envfile.read(str(env))
     assert values["NEXTAUTH_SECRET"] == "old" and len(values["NEW_SECRET"]) == 64
     assert values["DEMO_VERSION"] == "v1" and values["HIVE_NETWORK_NAME"] == "n"
-    assert values["DEMO_HTTP_PORT"] == "80" and values["NEXTAUTH_URL"] == "https://d.test"
+    assert (
+        values["DEMO_HTTP_PORT"] == "80" and values["NEXTAUTH_URL"] == "https://d.test"
+    )
 
 
 def test_tls_issues_and_then_reuses(tmp_path):
