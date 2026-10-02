@@ -13,4 +13,4 @@ install.ps1, update.sh, link-hive.sh); the per-app differences live in each
 app's `deploy/app.json` (see spec.py).
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

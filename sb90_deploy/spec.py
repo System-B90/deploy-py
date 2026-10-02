@@ -7,6 +7,7 @@ bundle — lives here, so the flows themselves are identical across apps. See
 README.md for every key.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,11 @@ OVERLAY_FILE = "docker-compose.hive-local.yml"
 SETUP_SCRIPT = "setup.py"
 SPEC_FILE = "app.json"
 VERSION_FILE = "VERSION"
+# sha256 of every file as shipped; an upgrade compares the live copies against it
+# to tell a release's own changes from an operator's hand edits.
+MANIFEST_FILE = ".bundle-manifest.json"
+# Never hashed: regenerated, swapped wholesale, or too large to be hand-edited.
+_UNHASHED = ("images", "wheels", "__pycache__", ".venv")
 
 _IMAGE_LINE = re.compile(r"^\s*image:\s*(.+?)\s*$")
 _VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?([-?])([^}]*))?\}")
@@ -126,3 +132,34 @@ def image_archive_name(reference, own, app_name):
     last = reference.split("/")[-1]
     leaf = last.split(":", 1)[0].split("@", 1)[0]
     return f"{app_name}-{leaf}.tar" if own else leaf + ".tar"
+
+
+def file_hashes(root):
+    """{"relative/posix/path": sha256} for every bundle file under root."""
+    hashes = {}
+    for directory, subdirs, files in os.walk(root):
+        subdirs[:] = [d for d in subdirs if d not in _UNHASHED]
+        for name in files:
+            path = os.path.join(directory, name)
+            relative = os.path.relpath(path, root).replace(os.sep, "/")
+            if relative == MANIFEST_FILE:
+                continue
+            with open(path, "rb") as handle:
+                hashes[relative] = hashlib.sha256(handle.read()).hexdigest()
+    return hashes
+
+
+def write_manifest(root):
+    path = os.path.join(root, MANIFEST_FILE)
+    with open(path, "w", encoding="utf-8", newline="\n") as out:
+        json.dump(file_hashes(root), out, indent=2, sort_keys=True)
+        out.write("\n")
+
+
+def read_manifest(root):
+    """The manifest the deployment was installed from, or None for older bundles."""
+    try:
+        with open(os.path.join(root, MANIFEST_FILE), encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None

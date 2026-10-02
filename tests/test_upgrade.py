@@ -150,3 +150,58 @@ def test_explicit_overlay_env_var_still_wins(deployment, tmp_path, calls, monkey
 
     assert _update(deployment, "--package", str(package)) == 0
     assert all(str(custom) in call for call in _compose_calls(calls))
+
+
+def _edited_deployment(deployment):
+    """A deployment installed from a manifest-carrying bundle, then hand-edited."""
+    from sb90_deploy.spec import write_manifest
+
+    write_manifest(str(deployment))
+    (deployment / "docker-compose.yml").write_text("# hand-edited\n")
+    return deployment
+
+
+def test_hand_edited_files_are_listed_and_replaced_with_yes(
+    deployment, tmp_path, calls, monkeypatch, capsys
+):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    _edited_deployment(deployment)
+    package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
+
+    assert _update(deployment, "--package", str(package)) == 0
+
+    out = capsys.readouterr().out
+    assert "edited on this host" in out
+    assert "        docker-compose.yml" in out
+    # install.sh changed between releases but was never hand-edited
+    assert "        install.sh" not in out
+    assert (
+        deployment / ".bundle-bak-v1.0.0" / "docker-compose.yml"
+    ).read_text() == "# hand-edited\n"
+
+
+def test_declining_to_replace_hand_edits_stops_before_rolling(
+    deployment, tmp_path, calls, monkeypatch, capsys
+):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    _edited_deployment(deployment)
+    package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
+    replies = iter(["y", "n"])  # proceed with the upgrade, keep the edits
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(replies))
+
+    assert run_cli("update", "--root", str(deployment), "--package", str(package)) == 1
+
+    assert "stopped before replacing" in capsys.readouterr().out
+    assert (deployment / "docker-compose.yml").read_text() == "# hand-edited\n"
+    assert "DEMO_VERSION=v1.0.0" in (deployment / ".env").read_text()
+    assert not [c for c in calls.joined() if " --no-deps " in c]
+
+
+def test_deployment_without_manifest_warns_and_proceeds(
+    deployment, tmp_path, calls, monkeypatch, capsys
+):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
+
+    assert _update(deployment, "--package", str(package)) == 0
+    assert "predates the bundle manifest" in capsys.readouterr().out
