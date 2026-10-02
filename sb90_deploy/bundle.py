@@ -47,6 +47,7 @@ from .spec import (
     AppSpec,
     compose_images,
     image_archive_name,
+    write_manifest,
 )
 
 DEFAULT_PLATFORMS = ["manylinux2014_x86_64", "win_amd64"]
@@ -102,6 +103,8 @@ def populate(stage: Path, spec: AppSpec, spec_path: Path, repo: Path, tag: str) 
         _write(stage / f"{command}.ps1", _template("shim.ps1"))
     for script in stage.rglob("*.sh"):
         script.chmod(0o755)
+    # Last, so it covers every file above and none of images/ or wheels/.
+    write_manifest(stage)
 
 
 def guard(stage: Path) -> None:

@@ -22,7 +22,13 @@ import urllib.request
 from . import docker, envfile
 from .console import Failure, confirm, log, ok, report, say, warn
 from .deployment import Deployment
-from .spec import COMPOSE_FILE, VERSION_FILE, compose_images
+from .spec import (
+    COMPOSE_FILE,
+    VERSION_FILE,
+    compose_images,
+    file_hashes,
+    read_manifest,
+)
 
 # Swapped wholesale rather than file by file.
 _DIRECTORIES = ("wheels",)
@@ -304,12 +310,61 @@ class Upgrade:
                 return True
         return norm.startswith(".env")
 
+    def local_edits(self) -> list[str] | None:
+        """Bundle files edited on this host since install, that the package replaces.
+
+        None when the deployment predates the manifest and edits cannot be told
+        apart from the previous release's own content.
+        """
+        shipped = read_manifest(self.d.root)
+        if shipped is None:
+            return None
+        incoming = file_hashes(self.package_root)
+        live = file_hashes(self.d.root)
+        return sorted(
+            relative
+            for relative, digest in shipped.items()
+            if relative in incoming
+            and relative in live
+            and live[relative] != digest
+            and live[relative] != incoming[relative]
+            and not self._is_state(relative)
+        )
+
+    def guard_local_edits(self) -> None:
+        """Hand edits to bundle files (e.g. an extra network in the hive-local
+        overlay) were silently replaced, taking a co-located prod down."""
+        edits = self.local_edits()
+        backup = f".bundle-bak-{self.previous}"
+        if edits is None:
+            warn("this deployment predates the bundle manifest - any hand edits to its")
+            warn(
+                f"compose files or scripts will be replaced (previous copies -> {backup})"
+            )
+            return
+        if not edits:
+            return
+        warn("these bundle files were edited on this host and will be REPLACED:")
+        for relative in edits:
+            say(f"        {relative}")
+        say(f"        previous copies are kept in {backup}/ - re-apply what is still")
+        say("        needed after the upgrade, ideally as a compose override file.")
+        if not confirm(
+            "Replace them and continue?", default=False, assume_yes=self.args.yes
+        ):
+            raise Failure(
+                "Upgrade stopped before replacing locally edited files.",
+                "Nothing was rolled; the running containers and .env are untouched.",
+                "Re-run with --yes to replace them anyway.",
+            )
+
     def refresh_bundle(self) -> None:
         """Replace the deployment's scripts/compose/tools with the package's.
 
         Host-specific state (.env, certificates, app.json `state` entries) is
         never touched. Previous copies go to .bundle-bak-<previous>.
         """
+        self.guard_local_edits()
         self.bundle_backup = os.path.join(self.d.root, f".bundle-bak-{self.previous}")
         log(
             self.spec.name,
