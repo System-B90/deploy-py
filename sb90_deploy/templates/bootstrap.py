@@ -8,24 +8,44 @@ the install.sh / install.ps1 (update, link-hive) shims:
 
 The only thing a deployment host is promised is Python 3.6+, so THIS FILE must
 stay 3.6-compatible and stdlib-only. Everything else runs inside `.venv`, which
-needs Python 3.10+ (Ubuntu 22.04's stock python3). The venv's interpreter is found on the
+needs the oldest Python the bundle vendored wheels for (app.json `bundle.pythons`;
+3.10, Ubuntu 22.04's stock python3, by default). The venv's interpreter is found on the
 host - this interpreter if new enough, else `py -3.x` / `python3.1x` - and the
 venv is (re)built whenever it is missing, too old, or out of date with the
 bundle's wheels.
 """
 
 import glob
+import json
 import os
 import subprocess
 import sys
 
-VENV_FLOOR = (3, 10)
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV = os.path.join(HERE, ".venv")
 WHEELS = os.path.join(HERE, "wheels")
 REQUIREMENTS = os.path.join(HERE, "requirements.txt")
 STAMP = os.path.join(VENV, ".sb90-stamp")
 INDEX = "https://system-b90.github.io/.github/pypi/"
+# min(bundle.DEFAULT_PYTHONS): the floor when app.json names no pythons.
+DEFAULT_FLOOR = (3, 10)
+
+
+def venv_floor():
+    """The oldest Python the bundle's wheels were vendored for.
+
+    A venv on an older Python builds fine, then fails at `pip install <app>`
+    (Bluz dropped 3.10 in v1.4.0-rc.1), so refuse it up front instead.
+    """
+    try:
+        with open(os.path.join(HERE, "app.json"), encoding="utf-8") as handle:
+            pythons = json.load(handle).get("bundle", {}).get("pythons")
+        return min(tuple(int(part) for part in v.split(".")[:2]) for v in pythons)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return DEFAULT_FLOOR
+
+
+VENV_FLOOR = venv_floor()
 
 
 def fail(message, *hints):
@@ -71,8 +91,9 @@ def find_interpreter():
         % VENV_FLOOR,
         "This host's Python (%d.%d) is enough to start, not to run them."
         % sys.version_info[:2],
-        "Ubuntu 22.04: the stock python3 (3.10) is enough; Windows: python.org 3.10+,",
-        "then re-run. It is found automatically; nothing else needs to change.",
+        "Install Python %d.%d+ alongside it (Windows: python.org), then re-run."
+        % VENV_FLOOR,
+        "It is found automatically; nothing else needs to change.",
     )
 
 

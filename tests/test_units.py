@@ -153,6 +153,41 @@ def test_bootstrap_rejects_missing_command():
     assert result.returncode == 1 and "usage" in result.stderr
 
 
+def _bootstrap_in(root, app=None):
+    """Import a copy of bootstrap.py from `root`, as it runs in a bundle."""
+    import importlib.util
+    import shutil
+    from pathlib import Path
+
+    import sb90_deploy
+
+    template = Path(sb90_deploy.__file__).parent / "templates" / "bootstrap.py"
+    root.mkdir(parents=True, exist_ok=True)
+    shutil.copy(template, root / "bootstrap.py")
+    if app is not None:
+        (root / "app.json").write_text(app if isinstance(app, str) else json.dumps(app))
+    spec = importlib.util.spec_from_file_location(
+        "bootstrap_copy", root / "bootstrap.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_bootstrap_floor_follows_bundle_pythons(tmp_path):
+    app = dict(APP, bundle={"pythons": ["3.13", "3.11", "3.12"]})
+    assert _bootstrap_in(tmp_path / "b", app).VENV_FLOOR == (3, 11)
+
+
+def test_bootstrap_floor_defaults_without_pythons(tmp_path):
+    from sb90_deploy.bundle import DEFAULT_PYTHONS
+
+    default = min(tuple(map(int, v.split("."))) for v in DEFAULT_PYTHONS)
+    assert _bootstrap_in(tmp_path / "none").VENV_FLOOR == default
+    assert _bootstrap_in(tmp_path / "unset", APP).VENV_FLOOR == default
+    assert _bootstrap_in(tmp_path / "broken", "{not json").VENV_FLOOR == default
+
+
 def test_wizard_keeps_secrets_and_foreign_keys(tmp_path, monkeypatch):
     from sb90_deploy.spec import AppSpec
     from sb90_deploy.wizard import Wizard
