@@ -18,6 +18,7 @@ bundle's wheels.
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -29,23 +30,77 @@ STAMP = os.path.join(VENV, ".sb90-stamp")
 INDEX = "https://system-b90.github.io/.github/pypi/"
 # min(bundle.DEFAULT_PYTHONS): the floor when app.json names no pythons.
 DEFAULT_FLOOR = (3, 10)
+_PYTHON_RE = re.compile(r"^(\d+)\.(\d+)$")
 
 
-def venv_floor():
-    """The oldest Python the bundle's wheels were vendored for.
+def bundle_pythons():
+    """The (major, minor) Pythons the bundle's wheels were vendored for.
 
-    A venv on an older Python builds fine, then fails at `pip install <app>`
-    (Bluz dropped 3.10 in v1.4.0-rc.1), so refuse it up front instead.
+    None when the bundle doesn't say (no app.json, or no bundle.pythons):
+    older bundles, which keep DEFAULT_FLOOR. A present but unusable value is
+    a bundle bug and raises ValueError rather than quietly falling back to
+    the old floor - that fallback is the failure this guards against.
     """
     try:
         with open(os.path.join(HERE, "app.json"), encoding="utf-8") as handle:
-            pythons = json.load(handle).get("bundle", {}).get("pythons")
-        return min(tuple(int(part) for part in v.split(".")[:2]) for v in pythons)
-    except (OSError, ValueError, TypeError, AttributeError):
-        return DEFAULT_FLOOR
+            text = handle.read()
+    except OSError:
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ValueError("app.json is not valid JSON") from None
+    bundle = data.get("bundle") if isinstance(data, dict) else None
+    if not isinstance(bundle, dict) or "pythons" not in bundle:
+        return None
+    pythons = bundle["pythons"]
+    if not isinstance(pythons, list) or not pythons:
+        raise ValueError("app.json bundle.pythons must be a non-empty list")
+    parsed = []
+    for value in pythons:
+        match = _PYTHON_RE.match(value) if isinstance(value, str) else None
+        if not match:
+            raise ValueError(
+                'app.json bundle.pythons has %r; expected versions like "3.12"'
+                % (value,)
+            )
+        parsed.append((int(match.group(1)), int(match.group(2))))
+    return sorted(set(parsed))
 
 
-VENV_FLOOR = venv_floor()
+try:
+    BUNDLE_PYTHONS = bundle_pythons()
+    BUNDLE_PYTHONS_ERROR = None
+except ValueError as error:
+    BUNDLE_PYTHONS, BUNDLE_PYTHONS_ERROR = None, str(error)
+VENV_FLOOR = BUNDLE_PYTHONS[0] if BUNDLE_PYTHONS else DEFAULT_FLOOR
+
+
+def exact_pythons():
+    """The only Pythons a venv may use, or None when any above the floor will do.
+
+    An offline bundle installs from its own wheels with --no-index, and those
+    are built per Python version: a newer interpreter passes a floor check,
+    then finds no cp3XX wheels. An online bundle installs from the index, so
+    the floor is enough there.
+    """
+    if BUNDLE_PYTHONS and os.path.isdir(WHEELS):
+        return BUNDLE_PYTHONS
+    return None
+
+
+def usable(version):
+    if not version:
+        return False
+    exact = exact_pythons()
+    return version in exact if exact else version >= VENV_FLOOR
+
+
+def needed_text():
+    exact = exact_pythons()
+    if exact:
+        return " or ".join("%d.%d" % v for v in exact)
+    return "%d.%d+" % VENV_FLOOR
 
 
 def fail(message, *hints):
@@ -83,16 +138,21 @@ def candidates():
 
 def find_interpreter():
     for argv in candidates():
-        found = version_of(argv)
-        if found and found >= VENV_FLOOR:
+        if usable(version_of(argv)):
             return argv
+    exact = exact_pythons()
     fail(
-        "Python %d.%d+ is needed for the deployment tools, but only older versions were found."
-        % VENV_FLOOR,
-        "This host's Python (%d.%d) is enough to start, not to run them."
+        "Python %s is needed for the deployment tools, but it was not found."
+        % needed_text()
+        if exact
+        else "Python %s is needed for the deployment tools, but only older versions were found."
+        % needed_text(),
+        "This bundle has wheels for exactly those versions."
+        if exact
+        else "This host's Python (%d.%d) is enough to start, not to run them."
         % sys.version_info[:2],
-        "Install Python %d.%d+ alongside it (Windows: python.org), then re-run."
-        % VENV_FLOOR,
+        "Install Python %s alongside it (Windows: python.org), then re-run."
+        % needed_text(),
         "It is found automatically; nothing else needs to change.",
     )
 
@@ -159,12 +219,12 @@ def ensure_venv(force=False):
     python = venv_python()
     current = version_of([python]) if os.path.exists(python) else None
     stamp = bundle_stamp()
-    if not force and current and current >= VENV_FLOOR and os.path.exists(STAMP):
+    if not force and usable(current) and os.path.exists(STAMP):
         with open(STAMP) as handle:
             if handle.read() == stamp:
                 return python
 
-    if not current or current < VENV_FLOOR:
+    if not usable(current):
         interpreter = find_interpreter()
         print("[WAIT] Creating .venv with %s..." % " ".join(interpreter))
         create_venv(interpreter)
@@ -197,6 +257,11 @@ def main(argv):
         )
     if not argv or argv == ["--reinstall-venv"]:
         fail("usage: bootstrap.py install|update|link-hive|setup [args...]")
+    if BUNDLE_PYTHONS_ERROR:
+        fail(
+            "This bundle is broken: %s." % BUNDLE_PYTHONS_ERROR,
+            "Re-download the bundle; if it persists, report it with the bundle name.",
+        )
     python = ensure_venv(force="--reinstall-venv" in argv)
     if argv[0] == "--venv-only":
         return

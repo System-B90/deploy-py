@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tarfile
 
+import pytest
 from conftest import APP, COMPOSE
 
 from sb90_deploy import envfile
@@ -185,7 +186,38 @@ def test_bootstrap_floor_defaults_without_pythons(tmp_path):
     default = min(tuple(map(int, v.split("."))) for v in DEFAULT_PYTHONS)
     assert _bootstrap_in(tmp_path / "none").VENV_FLOOR == default
     assert _bootstrap_in(tmp_path / "unset", APP).VENV_FLOOR == default
-    assert _bootstrap_in(tmp_path / "broken", "{not json").VENV_FLOOR == default
+
+
+def test_bootstrap_reports_a_broken_pythons_list(tmp_path):
+    # A present but unusable value is a bundle bug: falling back to the old
+    # floor silently is the failure the floor exists to prevent.
+    cases = {
+        "json": "{not json",
+        "empty": dict(APP, bundle={"pythons": []}),
+        "major-only": dict(APP, bundle={"pythons": ["3"]}),
+        "free-threaded": dict(APP, bundle={"pythons": ["3.13t"]}),
+        "not-a-list": dict(APP, bundle={"pythons": "3.12"}),
+    }
+    for name, app in cases.items():
+        module = _bootstrap_in(tmp_path / name, app)
+        assert module.BUNDLE_PYTHONS_ERROR, name
+        with pytest.raises(SystemExit):
+            module.main(["install"])
+
+
+def test_bootstrap_offline_bundle_needs_an_exact_python(tmp_path):
+    app = dict(APP, bundle={"pythons": ["3.12", "3.11"]})
+    online = _bootstrap_in(tmp_path / "online", app)
+    assert online.exact_pythons() is None
+    assert online.usable((3, 13)) and not online.usable((3, 10))
+
+    (tmp_path / "offline" / "wheels").mkdir(parents=True)
+    offline = _bootstrap_in(tmp_path / "offline", app)
+    assert offline.exact_pythons() == [(3, 11), (3, 12)]
+    # Above the floor but no cp313 wheels in the bundle.
+    assert not offline.usable((3, 13))
+    assert offline.usable((3, 11)) and offline.usable((3, 12))
+    assert offline.needed_text() == "3.11 or 3.12"
 
 
 def test_wizard_keeps_secrets_and_foreign_keys(tmp_path, monkeypatch):
