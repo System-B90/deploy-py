@@ -51,7 +51,7 @@ class AppSpec:
         self.required_files = list(data.get("required_files", []))
         # Host state an upgrade must never overwrite, on top of .env / .venv.
         self.state = list(data.get("state", ["nginx/ssl"]))
-        # Operator tooling installed into the bundle's .venv (e.g. bluz-cli).
+        # Operator tooling installed into the bundle's .venv (e.g. bluz).
         self.venv_packages = list(data.get("venv_packages", []))
         self.pip_index = data.get(
             "pip_index", "https://system-b90.github.io/.github/pypi/"
