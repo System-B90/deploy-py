@@ -67,7 +67,7 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
              "root_windows": "%ProgramData%\bluz\backups"},          // omit for stateless apps
   "required_files": [],                // must exist after setup.py (peek-a-boo's token file)
   "state": ["nginx/ssl"],              // host state an upgrade never overwrites
-  "venv_packages": ["bluz-cli"],       // operator tooling installed into .venv
+  "venv_packages": ["bluz"],       // operator tooling installed into .venv
   "post_install": ["..."],             // extra lines printed after install
   "bundle": {
     "dir": "bluz",

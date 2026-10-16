@@ -19,6 +19,9 @@ dependencies = [
     "cryptography>=42.0.0",
     # The org's prompt library; prompts.py falls back to input() off a TTY.
     "InquirerPy>=0.3.4",
+    # The CLI (brings rich for coloured --help and errors). 0.27 vendors its
+    # own click, whose exceptions cli.py catches via typer.*.
+    "typer>=0.27.0",
 ]
 
 [project.optional-dependencies]

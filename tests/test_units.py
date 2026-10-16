@@ -265,3 +265,35 @@ def test_wizard_required_domain_fails_cleanly_without_default(tmp_path, monkeypa
     w = Wizard(AppSpec(APP), env_path=str(tmp_path / ".env"))
     with pytest.raises(SystemExit, match="required"):
         w.domain()
+
+
+def test_wizard_own_host_binds_all_interfaces(tmp_path, monkeypatch):
+    """Answering "no other web server" must publish on 0.0.0.0:80/443, even
+    with a loopback default_bind or a stale loopback bind in .env."""
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "DEMO_BIND_IP=127.0.0.4\nDEMO_HTTP_PORT=8080\nDEMO_HTTPS_PORT=8443\n"
+    )
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    monkeypatch.setattr(w, "confirm", lambda *a, **k: False)
+    w.ports(default_bind="127.0.0.4")
+    w.write()
+    values = envfile.read(str(env))
+    assert values["DEMO_BIND_IP"] == "0.0.0.0"
+    assert values["DEMO_HTTP_PORT"] == "80" and values["DEMO_HTTPS_PORT"] == "443"
+
+
+def test_wizard_defaults_keep_loopback_bind(tmp_path, monkeypatch):
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    monkeypatch.setenv("SB90_WIZARD_DEFAULTS", "1")
+    env = tmp_path / ".env"
+    env.write_text("DEMO_BIND_IP=127.0.0.3\n")
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    w.ports()
+    w.write()
+    assert envfile.read(str(env))["DEMO_BIND_IP"] == "127.0.0.3"
