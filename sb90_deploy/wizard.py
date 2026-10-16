@@ -162,7 +162,7 @@ class Wizard:
         shares = self.confirm(
             "Is another web server (e.g. a local Hive stack) already using "
             "ports 80/443 on this machine?",
-            default=http_port != "80",
+            default=http_port != "80" or self.prev(bind_var, "0.0.0.0") != "0.0.0.0",
         )
         if shares:
             say(
@@ -187,6 +187,10 @@ class Wizard:
             bind_ip = self.ask(
                 None, f"Bind address ({bind_var}, 0.0.0.0 = all interfaces)", bind_ip
             )
+        else:
+            # Own host: publish on every interface. Don't carry over a loopback
+            # bind or custom ports from an earlier shared-host answer.
+            bind_ip, http_port, https_port = "0.0.0.0", "80", "443"
         self.set(bind_var, bind_ip)
         self.set(http_var, http_port)
         self.set(https_var, https_port)
