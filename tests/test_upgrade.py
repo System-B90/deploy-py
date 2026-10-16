@@ -205,3 +205,83 @@ def test_deployment_without_manifest_warns_and_proceeds(
 
     assert _update(deployment, "--package", str(package)) == 0
     assert "predates the bundle manifest" in capsys.readouterr().out
+
+
+def test_github_token_prefers_env_then_gh(monkeypatch):
+    from sb90_deploy import upgrade
+
+    upgrade.token_and_source.cache_clear()
+    monkeypatch.setenv("GH_TOKEN", "env-token")
+    assert upgrade.github_token() == "env-token"
+
+    upgrade.token_and_source.cache_clear()
+    monkeypatch.delenv("GH_TOKEN")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(upgrade.shutil, "which", lambda _: None)
+    assert upgrade.github_token() == ""
+    upgrade.token_and_source.cache_clear()
+
+
+def test_release_lookup_sends_token(monkeypatch):
+    import io
+
+    from sb90_deploy import upgrade
+
+    upgrade.token_and_source.cache_clear()
+    monkeypatch.setenv("GH_TOKEN", "secret")
+    seen = {}
+
+    def fake_urlopen(request, timeout):
+        seen.update(request.header_items())
+        return io.BytesIO(b'{"tag_name": "v9.9.9"}')
+
+    monkeypatch.setattr(upgrade.urllib.request, "urlopen", fake_urlopen)
+    assert upgrade.Upgrade._github(None, "https://api.github.com/x") == {
+        "tag_name": "v9.9.9"
+    }
+    assert seen["Authorization"] == "Bearer secret"
+    upgrade.token_and_source.cache_clear()
+
+
+def _http_error(code, headers=None):
+    import email.message
+    import urllib.error
+
+    message = email.message.Message()
+    for key, value in (headers or {}).items():
+        message[key] = value
+    return urllib.error.HTTPError(
+        "https://api.github.com/x", code, "Nope", message, None
+    )
+
+
+def _failure(monkeypatch, error, token="", pre_release=False):
+    from types import SimpleNamespace
+
+    from sb90_deploy import upgrade
+
+    monkeypatch.setattr(
+        upgrade, "token_and_source", lambda: (token, "GH_TOKEN" if token else "")
+    )
+    me = SimpleNamespace(args=SimpleNamespace(pre_release=pre_release))
+    return upgrade.Upgrade._lookup_failure(me, error, "System-B90/Demo")
+
+
+def test_lookup_failure_names_each_cause(monkeypatch):
+    import urllib.error
+
+    reason, hints = _failure(monkeypatch, _http_error(404))
+    assert "private" in reason and "no token" in reason
+    assert any("GH_TOKEN" in h for h in hints)
+
+    reason, hints = _failure(monkeypatch, _http_error(404), token="t")
+    assert "no stable release" in reason and "--pre-release" in hints[0]
+
+    reason, _ = _failure(monkeypatch, _http_error(401), token="t")
+    assert "rejected the token from GH_TOKEN" in reason
+
+    reason, _ = _failure(monkeypatch, _http_error(403, {"X-RateLimit-Remaining": "0"}))
+    assert "rate limit" in reason
+
+    reason, hints = _failure(monkeypatch, urllib.error.URLError("no route"))
+    assert "could not reach api.github.com (no route)" in reason

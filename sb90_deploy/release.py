@@ -4,10 +4,9 @@
 
 Derives the next semver from the latest `v*` tag, writes it into the manifests
 app.json `release.manifests` lists, commits, tags and pushes. Was each repo's
-scripts/publish.py (lifted from Bluz's); prompts use input(), no extra deps.
+scripts/publish.py (lifted from Bluz's); prompts go through prompts.py (InquirerPy on a terminal).
 """
 
-import argparse
 import re
 import subprocess
 import sys
@@ -134,30 +133,7 @@ def _repo_url(root: Path) -> str | None:
     return f"https://github.com/{match.group(1)}" if match else None
 
 
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--app", default="deploy/app.json", help="app.json, relative to --repo"
-    )
-    parser.add_argument("--repo", default=".", help="repo root (default: cwd)")
-    parser.add_argument("--bump", choices=BUMPS, help="skip the bump prompt")
-    parser.add_argument(
-        "--rc", action=argparse.BooleanOptionalAction, help="release candidate"
-    )
-    parser.add_argument(
-        "--version", dest="version", help="explicit version instead of the derived one"
-    )
-    parser.add_argument(
-        "--force", action="store_true", help="allow --version <= latest tag"
-    )
-    parser.add_argument(
-        "--yes", "-y", action="store_true", help="skip the confirmation"
-    )
-    parser.add_argument(
-        "--dry", action="store_true", help="commit and tag locally, push nothing"
-    )
-
-
-def publish(args: argparse.Namespace) -> int:
+def publish(args) -> int:
     root = Path(args.repo).resolve()
     spec = AppSpec.load(str(root / args.app))
     config = spec.data.get("release", {})

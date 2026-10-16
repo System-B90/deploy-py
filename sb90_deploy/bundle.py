@@ -22,6 +22,12 @@ target platform and Python the bootstrap may find).
     local_wheels  globs of wheels built earlier in the job (e.g. cli/dist/*.whl)
     platforms     wheel platforms (default manylinux2014_x86_64, win_amd64)
     pythons       Python versions to vendor for (default 3.10 3.11 3.12 3.13)
+    build_compose compose file with build: contexts, for `--images build`
+                  (default deploy/docker-compose.yml)
+
+`--images build` makes a fully offline bundle from the checkout alone: the app's
+own images are built from source (tagged as the release compose file names
+them), third-party ones are pulled, then everything is saved as usual.
 """
 
 from __future__ import annotations
@@ -122,17 +128,67 @@ def guard(stage: Path) -> None:
         raise Failure(f"{stage.name}: no {SETUP_SCRIPT} in the bundle")
 
 
-def save_images(stage: Path, spec: AppSpec, tag: str, mode: str) -> list[str]:
+DEFAULT_BUILD_COMPOSE = "deploy/docker-compose.yml"
+
+
+def build_images(
+    spec: AppSpec,
+    tag: str,
+    repo: Path,
+    images: list[tuple[str, bool]],
+    build_compose: str | None = None,
+) -> None:
+    """Build the app's own images from source, tagged as the release names them."""
+    compose = repo / (
+        build_compose or spec.bundle.get("build_compose", DEFAULT_BUILD_COMPOSE)
+    )
+    if not compose.is_file():
+        raise Failure(
+            f"No compose file to build from: {compose}",
+            "Pass --build-compose, or set bundle.build_compose in app.json.",
+        )
+    log("bundle", f"building {spec.display_name} {tag} from {compose.name}...")
+    env = dict(os.environ, **{spec.version_var: tag})
+    subprocess.run(
+        ["docker", "compose", "-f", str(compose), "build"], check=True, env=env
+    )
+    missing = [
+        reference
+        for reference, own in images
+        if own
+        and subprocess.run(
+            ["docker", "image", "inspect", reference], capture_output=True, check=False
+        ).returncode
+    ]
+    if missing:
+        raise Failure(
+            f"{compose.name} did not build: {', '.join(missing)}",
+            f"Its image: tags must match the release compose file's, with"
+            f" ${{{spec.version_var}}} for the version.",
+        )
+    ok(f"built {sum(own for _, own in images)} images from source")
+
+
+def save_images(
+    stage: Path,
+    spec: AppSpec,
+    tag: str,
+    mode: str,
+    repo: Path | None = None,
+    build_compose: str | None = None,
+) -> list[str]:
     text = (stage / COMPOSE_FILE).read_text(encoding="utf-8")
     images = compose_images(text, spec.version_var, tag)
     if mode == "skip":
         warn("images skipped - the offline bundle is not installable as-is")
         return []
+    if mode == "build":
+        build_images(spec, tag, repo or Path.cwd(), images, build_compose)
     target = stage / "images"
     target.mkdir(exist_ok=True)
     saved = []
     for reference, own in images:
-        if mode == "pull":
+        if mode == "pull" or (mode == "build" and not own):
             subprocess.run(["docker", "pull", reference], check=True)
         archive = target / image_archive_name(reference, own, spec.name)
         log("bundle", f"saving {reference} -> images/{archive.name}")
@@ -358,6 +414,7 @@ def craft(
     repo: str | None = None,
     images: str = "pull",
     wheels: bool = True,
+    build_compose: str | None = None,
 ) -> list[Path]:
     spec_file = Path(spec_path).resolve()
     spec = AppSpec.load(str(spec_file))
@@ -375,7 +432,7 @@ def craft(
             populate(stage, spec, spec_file, repo_root, tag)
             guard(stage)
             if flavour == "offline":
-                save_images(stage, spec, tag, images)
+                save_images(stage, spec, tag, images, repo_root, build_compose)
                 if wheels:
                     count = vendor_wheels(
                         stage, spec, repo_root, stage / "requirements.txt"

@@ -17,7 +17,9 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
+from functools import cache
 
 from . import docker, envfile
 from .console import Failure, confirm, log, ok, report, say, warn
@@ -34,6 +36,35 @@ from .spec import (
 _DIRECTORIES = ("wheels",)
 # Never copied from a package into a live deployment.
 _ALWAYS_STATE = (".env", ".venv", "images")
+
+
+def github_token() -> str:
+    return token_and_source()[0]
+
+
+@cache
+def token_and_source() -> tuple[str, str]:
+    """GH_TOKEN / GITHUB_TOKEN, else the gh CLI's login; ("", "") when none.
+
+    Private release repos 404 to anonymous API calls."""
+    for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+        if os.environ.get(name):
+            return os.environ[name].strip(), name
+    if not shutil.which("gh"):
+        return "", ""
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "", ""
+    token = result.stdout.strip() if result.returncode == 0 else ""
+    return token, ("`gh auth token`" if token else "")
+
 
 HEALTH_SCRIPT = (
     "fetch(%s).then(r=>r.text().then(t=>{console.log(t);process.exit(r.ok?0:1)}))"
@@ -168,9 +199,11 @@ class Upgrade:
         ok(f"offline package: {self.target} ({root})")
 
     def _github(self, url: str) -> object:
-        request = urllib.request.Request(
-            url, headers={"Accept": "application/vnd.github+json"}
-        )
+        headers = {"Accept": "application/vnd.github+json"}
+        token = github_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(request, timeout=15) as response:
             return json.load(response)
 
@@ -189,19 +222,87 @@ class Upgrade:
             else:
                 log(self.spec.name, f"resolving latest release from {repo}...")
                 self.target = self._github(api + "/latest")["tag_name"]
-        except (OSError, ValueError, KeyError, IndexError):
+        except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
             self.target = ""
+            reason, hints = self._lookup_failure(error, repo)
+        else:
+            if not self.target:
+                reason, hints = f"{repo} has no published releases", []
         if self.target:
             ok(f"latest release is {self.target}")
             return
-        warn("could not reach GitHub - falling back to the bundle's VERSION file")
-        self.target = self.d.bundle_version()
-        if not self.target:
+        fallback = self.d.bundle_version()
+        if not fallback:
             raise Failure(
-                "No target version given, GitHub unreachable, and no VERSION file.",
-                "Pass it explicitly: ./update.sh --version v1.0.0",
+                f"Cannot pick a target version: {reason}, and the bundle has no"
+                " VERSION file.",
+                *hints,
+                "Or name it explicitly: ./update.sh --version v1.0.0",
                 "Air-gapped host? Upgrade from a package: ./update.sh --package <path>",
             )
+        warn(
+            f"{reason} - falling back to the bundle's VERSION file ({fallback})",
+            *hints,
+            "Or name the target explicitly: ./update.sh --version vX.Y.Z",
+        )
+        self.target = fallback
+
+    def _lookup_failure(self, error: Exception, repo: str) -> tuple[str, list[str]]:
+        """Why the release lookup failed, and what the operator can do about it."""
+        token, source = token_and_source()
+        login = "Set GH_TOKEN to a token that can read it, or run `gh auth login`."
+        if isinstance(error, urllib.error.HTTPError):
+            code = error.code
+            if code == 404 and not token:
+                return (
+                    (
+                        f"GitHub answered 404 for {repo}: it is private (or does not"
+                        " exist) and no token was sent"
+                    ),
+                    [login],
+                )
+            if code == 404 and not self.args.pre_release:
+                return (
+                    (
+                        f"no stable release in {repo} (or the token from {source}"
+                        " cannot see it)"
+                    ),
+                    ["Only prereleases published? Add --pre-release."],
+                )
+            if code == 404:
+                return f"the token from {source} cannot see {repo}", [login]
+            if code == 401:
+                return (
+                    (
+                        f"GitHub rejected the token from {source} (401: expired or"
+                        " revoked)"
+                    ),
+                    [login],
+                )
+            if code == 403 and error.headers.get("X-RateLimit-Remaining") == "0":
+                reset = error.headers.get("X-RateLimit-Reset", "")
+                when = (
+                    time.strftime(" until %H:%M", time.localtime(int(reset)))
+                    if reset.isdigit()
+                    else ""
+                )
+                return (
+                    f"GitHub API rate limit hit{when}",
+                    [] if token else ["Authenticated calls get far more: " + login],
+                )
+            if code == 403:
+                return (
+                    f"the token from {source} may not read {repo} (403)",
+                    ["Fine-grained tokens need Contents: read on that repo."],
+                )
+            return f"GitHub answered {code} {error.reason} for {repo}", []
+        if isinstance(error, (TimeoutError, urllib.error.URLError, OSError)):
+            detail = getattr(error, "reason", error)
+            return (
+                f"could not reach api.github.com ({detail})",
+                ["Check the network / HTTPS proxy (HTTPS_PROXY)."],
+            )
+        return f"unexpected answer from the GitHub API ({error!r})", []
 
     # -- steps ---------------------------------------------------------------
 
