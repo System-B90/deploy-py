@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tarfile
 
+import pytest
 from conftest import APP, COMPOSE
 
 from sb90_deploy import envfile
@@ -151,6 +152,72 @@ def test_bootstrap_rejects_missing_command():
         [sys.executable, str(bootstrap)], capture_output=True, text=True, check=False
     )
     assert result.returncode == 1 and "usage" in result.stderr
+
+
+def _bootstrap_in(root, app=None):
+    """Import a copy of bootstrap.py from `root`, as it runs in a bundle."""
+    import importlib.util
+    import shutil
+    from pathlib import Path
+
+    import sb90_deploy
+
+    template = Path(sb90_deploy.__file__).parent / "templates" / "bootstrap.py"
+    root.mkdir(parents=True, exist_ok=True)
+    shutil.copy(template, root / "bootstrap.py")
+    if app is not None:
+        (root / "app.json").write_text(app if isinstance(app, str) else json.dumps(app))
+    spec = importlib.util.spec_from_file_location(
+        "bootstrap_copy", root / "bootstrap.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_bootstrap_floor_follows_bundle_pythons(tmp_path):
+    app = dict(APP, bundle={"pythons": ["3.13", "3.11", "3.12"]})
+    assert _bootstrap_in(tmp_path / "b", app).VENV_FLOOR == (3, 11)
+
+
+def test_bootstrap_floor_defaults_without_pythons(tmp_path):
+    from sb90_deploy.bundle import DEFAULT_PYTHONS
+
+    default = min(tuple(map(int, v.split("."))) for v in DEFAULT_PYTHONS)
+    assert _bootstrap_in(tmp_path / "none").VENV_FLOOR == default
+    assert _bootstrap_in(tmp_path / "unset", APP).VENV_FLOOR == default
+
+
+def test_bootstrap_reports_a_broken_pythons_list(tmp_path):
+    # A present but unusable value is a bundle bug: falling back to the old
+    # floor silently is the failure the floor exists to prevent.
+    cases = {
+        "json": "{not json",
+        "empty": dict(APP, bundle={"pythons": []}),
+        "major-only": dict(APP, bundle={"pythons": ["3"]}),
+        "free-threaded": dict(APP, bundle={"pythons": ["3.13t"]}),
+        "not-a-list": dict(APP, bundle={"pythons": "3.12"}),
+    }
+    for name, app in cases.items():
+        module = _bootstrap_in(tmp_path / name, app)
+        assert module.BUNDLE_PYTHONS_ERROR, name
+        with pytest.raises(SystemExit):
+            module.main(["install"])
+
+
+def test_bootstrap_offline_bundle_needs_an_exact_python(tmp_path):
+    app = dict(APP, bundle={"pythons": ["3.12", "3.11"]})
+    online = _bootstrap_in(tmp_path / "online", app)
+    assert online.exact_pythons() is None
+    assert online.usable((3, 13)) and not online.usable((3, 10))
+
+    (tmp_path / "offline" / "wheels").mkdir(parents=True)
+    offline = _bootstrap_in(tmp_path / "offline", app)
+    assert offline.exact_pythons() == [(3, 11), (3, 12)]
+    # Above the floor but no cp313 wheels in the bundle.
+    assert not offline.usable((3, 13))
+    assert offline.usable((3, 11)) and offline.usable((3, 12))
+    assert offline.needed_text() == "3.11 or 3.12"
 
 
 def test_wizard_keeps_secrets_and_foreign_keys(tmp_path, monkeypatch):
