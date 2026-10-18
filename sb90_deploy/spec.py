@@ -90,6 +90,9 @@ class AppSpec:
     def offline_archive(self, tag):
         return f"{self.bundle_dir}-offline-{tag}.tar.gz"
 
+    def delta_archive(self, tag):
+        return f"{self.bundle_dir}-delta-{tag}.tar.zst"
+
 
 def _substitute(value, version_var, tag):
     def replace(match):

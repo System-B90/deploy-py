@@ -91,6 +91,15 @@ def load_image(archive):
     return loaded
 
 
+def save_images(archive, references):
+    """`docker save` several images into one archive (layers stored once)."""
+    if not references:
+        raise Failure("none of the running release's images are present locally")
+    result = docker("save", "-o", archive, *references, check=False, capture=True)
+    if result.returncode != 0:
+        raise Failure("docker save failed.", (result.stderr or "").strip())
+
+
 def image_exists(reference):
     return succeeds("image", "inspect", reference)
 

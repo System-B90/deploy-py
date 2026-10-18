@@ -1,5 +1,8 @@
 """In-place release upgrade — online (pull) or offline (--package). Was Bluz's update.sh.
 
+`--package` takes the full offline bundle or a delta package (delta.py), which
+is first rebuilt into the full bundle from the images this host runs.
+
 Back up, get the new images, refresh the bundle's own files, roll the containers
 one service at a time, let the ui image run its own migrations, then verify. Any
 failed step stops the upgrade and prints the exact rollback command, including
@@ -21,7 +24,8 @@ import urllib.error
 import urllib.request
 from functools import cache
 
-from . import docker, envfile
+from . import delta, docker, envfile
+from .archive import safe_extract
 from .console import Failure, confirm, log, ok, report, say, warn
 from .deployment import Deployment
 from .spec import (
@@ -80,6 +84,7 @@ class Upgrade:
         self.previous = ""
         self.target = args.version or ""
         self.package_root = ""
+        self.delta: dict | None = None
         self.scratch: list[str] = []
         self.backup_dir = ""
         self.bundle_backup = ""
@@ -119,23 +124,10 @@ class Upgrade:
     def _extract(self, archive: str) -> str:
         target = tempfile.mkdtemp(prefix=f"{self.spec.name}-package-")
         self.scratch.append(target)
-        with tarfile.open(archive) as tar:
-            root = os.path.realpath(target)
-            for member in tar.getmembers():
-                dest = os.path.realpath(os.path.join(target, member.name))
-                if not dest.startswith(root + os.sep) and dest != root:
-                    raise Failure(f"{archive} contains an unsafe path: {member.name}")
-            tar.extractall(target)
-        return target
+        return safe_extract(archive, target)
 
     def _descend(self, root: str) -> str:
-        """The tarball wraps the bundle in one directory; step into it."""
-        if os.path.isfile(os.path.join(root, COMPOSE_FILE)):
-            return root
-        nested = [p for p in glob.glob(os.path.join(root, "*")) if os.path.isdir(p)]
-        if len(nested) == 1 and os.path.isfile(os.path.join(nested[0], COMPOSE_FILE)):
-            return nested[0]
-        return root
+        return delta.descend(root)
 
     def _manifest_tag(self, root: str) -> str:
         """Older offline bundles had no VERSION; read the own image's tag from its archive."""
@@ -160,10 +152,11 @@ class Upgrade:
             log(self.spec.name, f"extracting {path}...")
             try:
                 root = self._extract(path)
-            except tarfile.TarError as error:
+            except (tarfile.TarError, OSError) as error:
                 raise Failure(
                     f"Could not extract {path}: {error}",
-                    f"Expected the release's {self.spec.offline_archive('<tag>')}.",
+                    f"Expected the release's {self.spec.offline_archive('<tag>')}"
+                    f" or {self.spec.delta_archive('<tag>')}.",
                 ) from error
         else:
             raise Failure(
@@ -177,6 +170,10 @@ class Upgrade:
                 f"No {COMPOSE_FILE} in the package ({root}).",
                 f"That is not a {self.spec.display_name} release bundle.",
             )
+        self.delta = delta.read_meta(root)
+        if self.delta:
+            self._accept_delta(root)
+            return
         if not glob.glob(os.path.join(root, "images", "*.tar")):
             raise Failure(
                 f"No images/*.tar in the package ({root}).",
@@ -197,6 +194,52 @@ class Upgrade:
             )
         self.package_root = root
         ok(f"offline package: {self.target} ({root})")
+
+    def _accept_delta(self, root: str) -> None:
+        """A delta only rebuilds its target on top of one of its bases."""
+        self.target = self.delta["target"]
+        bases = self.delta["bases"]
+        if self.previous not in bases and self.target != self.previous:
+            raise Failure(
+                f"This delta package upgrades {', '.join(bases)} to {self.target};"
+                f" this host runs {self.previous}.",
+                f"Use the full offline package instead:"
+                f" {self.spec.offline_archive(self.target)}",
+            )
+        self.package_root = root
+        ok(f"delta package: {self.previous} -> {self.target} ({root})")
+
+    def materialize_delta(self) -> None:
+        """Rebuild the full offline package from the delta + this host's images.
+
+        Runs before anything is touched: a mismatch costs nothing but time."""
+        with open(self.d.compose_file, encoding="utf-8") as handle:
+            running = [
+                reference
+                for reference, _own in compose_images(
+                    handle.read(), self.spec.version_var, self.previous
+                )
+                if docker.image_exists(reference)
+            ]
+        log(
+            self.spec.name,
+            f"saving the {self.previous} images to rebuild {self.target} from...",
+        )
+        base = os.path.join(self.package_root, delta.DELTA_DIR, "base.tar")
+        try:
+            docker.save_images(base, running)
+            delta.materialize(
+                self.package_root,
+                self.delta,
+                base,
+                os.path.join(self.d.root, "wheels"),
+            )
+        except (Failure, OSError, KeyError, ValueError) as error:
+            raise Failure(
+                f"Could not rebuild {self.target} from the delta package: {error}",
+                "Nothing was changed. Upgrade with the full offline package:",
+                f"  ./update.sh --package {self.spec.offline_archive(self.target)}",
+            ) from error
 
     def _github(self, url: str) -> object:
         headers = {"Accept": "application/vnd.github+json"}
@@ -619,7 +662,11 @@ class Upgrade:
         log(
             spec.name,
             "mode         : "
-            + (f"offline ({args.package})" if args.package else "online"),
+            + (
+                f"offline {'delta ' if self.delta else ''}({args.package})"
+                if args.package
+                else "online"
+            ),
         )
         log(spec.name, f"install dir  : {self.d.root}")
         log(spec.name, "compose files: " + ", ".join(self.d.compose_files()))
@@ -638,6 +685,8 @@ class Upgrade:
             say("Aborted.")
             return 1
 
+        if self.delta:
+            self.materialize_delta()
         if do_backup:
             self.run_backup()
         elif spec.backup:
