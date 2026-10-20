@@ -16,7 +16,7 @@ extracts into `<app>/`:
 
 ```
 ./install.sh              # .\install.ps1 on Windows
-./update.sh [--version vX | --package <offline bundle>] [--pre-release] [--skip-backup] [-y]
+./update.sh [--version vX | --package <offline or delta bundle>] [--pre-release] [--skip-backup] [-y]
 ./link-hive.sh            # only for a Hive on the same Docker daemon
 python3 bootstrap.py setup   # re-run the .env wizard
 ```
@@ -44,6 +44,7 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
 | `link-hive` | `linkhive.py` | `link-hive.sh`, `link-hive.ps1` |
 | `setup` | the app's `setup.py` + `wizard.py`, `tls.py`, `hive.py` | each app's `setup.py` |
 | `bundle` | `bundle.py` | each workflow's `craft-release` shell steps |
+| `delta` | `delta.py`, `archive.py` | new: see [Delta packages](#delta-packages) |
 | `publish` | `release.py` | each repo's `scripts/publish.py` / `bump_version.py` |
 
 ## `app.json`
@@ -114,6 +115,46 @@ In an app's release workflow, use the org composite action:
   with:
       tag: ${{ github.ref_name }}
 ```
+
+## Delta packages
+
+A full offline bundle is every image, every release (Bluz: ~650 MB). A delta
+`<dir>-delta-<tag>.tar.zst` carries only what the host lacks (Bluz v1.6.1 → v1.6.2:
+**0.2 MB**). One file serves every base it was built against, like a cumulative
+Windows update — the operator never chains patches.
+
+```
+python -m sb90_deploy delta --target dist/<dir>-offline-v1.3.0.tar.gz \
+    --base <dir>-offline-v1.2.1.tar.gz --base <dir>-offline-v1.2.0.tar.gz --out dist
+./update.sh --package <dir>-delta-v1.3.0.tar.zst       # on the host
+```
+
+How it stays small, per image layer of the target:
+
+| Layer | Shipped |
+| --- | --- |
+| On every base (same diffID) | nothing — the host has it loaded |
+| Changed (counterpart at the same position in a base) | `zstd --patch-from` the base layer, `--ultra -22 --long` — one patch per distinct base layer |
+| New (no counterpart), or patches would be bigger | the layer, `--ultra -22 --long` |
+
+Wheels ship only when some base lacks them; bundle files ship whole (a few KB).
+
+On the host, `update --package <delta>` checks the running release is a listed
+base, `docker save`s its running images, rebuilds every target image archive
+and `wheels/`, verifies each layer against its diffID and each wheel against its
+sha256, then carries on as a normal offline upgrade. Any mismatch stops it before
+anything is touched, naming the full offline package to use instead.
+
+Limits:
+
+* In-place upgrades only: the host must run a listed base, with its images still loaded.
+* A base bundled with sb90-deploy < 0.6.0 is skipped — its hosts upgrade with
+  their own older tools, which cannot read a delta. Upgrade those once with the
+  full offline package.
+* Crafting needs each base's offline bundle and RAM for one base + target layer.
+
+In CI, the `craft-release` action builds it with `delta-bases: <n>` (the `n`
+newest earlier stable releases).
 
 ## Publishing a release
 

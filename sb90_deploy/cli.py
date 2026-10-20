@@ -11,6 +11,7 @@ from enum import Enum
 from types import SimpleNamespace
 from typing import Annotated
 
+import click
 import typer
 
 from . import __version__, prompts
@@ -86,7 +87,7 @@ def _menu(ctx: typer.Context) -> int:
         for name in group.list_commands(ctx)
     ]
     name = prompts.select(f"sb90_deploy {__version__} - what now?", choices, "install")
-    if name in ("bundle", "wheels"):
+    if name in ("bundle", "delta", "wheels"):
         # Required options; not something to guess at from a menu.
         return _dispatch([name, "--help"])
     return _dispatch([name])
@@ -109,7 +110,9 @@ def update(
     ] = None,
     package: Annotated[
         str | None,
-        typer.Option(help="Offline bundle (.tar.gz or extracted dir)."),
+        typer.Option(
+            help="Offline bundle (.tar.gz or extracted dir), or a delta (.tar.zst)."
+        ),
     ] = None,
     pre_release: Annotated[
         bool, typer.Option("--pre-release", help="Include prereleases.")
@@ -121,7 +124,7 @@ def update(
         bool, typer.Option("--yes", "-y", help="Do not ask to proceed.")
     ] = False,
 ) -> int:
-    """In-place upgrade (online, or --package <offline bundle>)."""
+    """In-place upgrade (online, or --package <offline or delta bundle>)."""
     from .upgrade import upgrade
 
     args = SimpleNamespace(
@@ -182,6 +185,28 @@ def bundle(
     from .bundle import craft
 
     craft(app_json, tag, out, repo, images.value, not no_wheels, build_compose)
+    return 0
+
+
+@app.command(rich_help_panel=RELEASE)
+def delta(
+    target: Annotated[
+        str, typer.Option(help="The new release's offline bundle (.tar.gz or dir).")
+    ],
+    bases: Annotated[
+        list[str],
+        typer.Option(
+            "--base",
+            help="Offline bundle of a release the delta upgrades from. Repeatable:"
+            " one delta then serves every base.",
+        ),
+    ],
+    out: str = "dist",
+) -> int:
+    """Craft <dir>-delta-<tag>.tar.zst: only what the bases' hosts lack."""
+    from .delta import craft
+
+    craft(target, bases, out)
     return 0
 
 
@@ -261,7 +286,7 @@ def _dispatch(argv: list[str]) -> int:
         result = command.main(argv, prog_name="sb90_deploy", standalone_mode=False)
     except typer.Exit as done:
         return done.exit_code
-    except typer.TyperException as error:
+    except click.ClickException as error:
         error.show()
         return error.exit_code
     except typer.Abort:

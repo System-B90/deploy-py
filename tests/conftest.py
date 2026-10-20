@@ -9,6 +9,7 @@ fail the flow at the step it cares about:
     STUB_IMAGE=<ref>       what `compose ps --format {{.Image}}` reports
     STUB_NETWORKS=a,b      `docker network ls` output
     STUB_CONTAINERS=a,b    `docker ps` output
+    STUB_SAVE_FROM=<tar>   what `docker save -o <path>` writes
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ joined = " " + " ".join(args) + " "
 env = os.environ.get
 if args[:1] == ["load"]:
     print("Loaded image: ghcr.io/system-b90/demo/ui:" + env("STUB_LOAD_TAG", "v2.0.0"))
+    sys.exit(0)
+if args[:1] == ["save"]:
+    import shutil
+    shutil.copy(env("STUB_SAVE_FROM"), args[2])
     sys.exit(0)
 if args[:2] == ["network", "ls"]:
     print("\n".join(filter(None, env("STUB_NETWORKS", "").split(","))))

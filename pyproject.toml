@@ -22,6 +22,8 @@ dependencies = [
     # The CLI (brings rich for coloured --help and errors). 0.27 vendors its
     # own click, whose exceptions cli.py catches via typer.*.
     "typer>=0.27.0",
+    # Delta packages (delta.py): --patch-from, built and applied on the host.
+    "zstandard>=0.23.0",
 ]
 
 [project.optional-dependencies]
