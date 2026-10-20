@@ -11,6 +11,7 @@ from enum import Enum
 from types import SimpleNamespace
 from typing import Annotated
 
+import click
 import typer
 
 from . import __version__, prompts
@@ -285,7 +286,7 @@ def _dispatch(argv: list[str]) -> int:
         result = command.main(argv, prog_name="sb90_deploy", standalone_mode=False)
     except typer.Exit as done:
         return done.exit_code
-    except typer.TyperException as error:
+    except click.ClickException as error:
         error.show()
         return error.exit_code
     except typer.Abort:
