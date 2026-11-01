@@ -22,6 +22,13 @@ Typical use:
     w.write()
 
 `SB90_WIZARD_DEFAULTS=1` answers every question with its default — for CI.
+
+`SB90_WIZARD_MISSING_ONLY=1` (set by install/update on a host that already has
+a .env) asks only what that .env lacks: a keyed question whose key is present
+keeps its value silently, and an unkeyed one takes its default, which apps
+derive from the existing values. A release whose wizard grew a question thus
+asks it once on upgrade instead of never. `confirm(..., key=K)` marks a gate
+whose answer is recorded in K, so it is asked exactly when K is new.
 """
 
 from __future__ import annotations
@@ -36,6 +43,8 @@ from collections.abc import Callable
 from . import envfile, hive, prompts, tls
 from .console import paint, say
 from .spec import SPEC_FILE, AppSpec
+
+MISSING_ONLY_ENV = "SB90_WIZARD_MISSING_ONLY"
 
 
 def hex_key(n_bytes: int = 32) -> str:
@@ -61,10 +70,19 @@ class Wizard:
         self.existing = envfile.read(env_path)
         self.values: OrderedDict[str, str] = OrderedDict()
         self.defaults_only = os.environ.get("SB90_WIZARD_DEFAULTS") == "1"
+        self.missing_only = os.environ.get(MISSING_ONLY_ENV) == "1" and bool(
+            self.existing
+        )
         self.url = ""
         say(f"Starting {self.display_name} interactive environment setup...")
+        if self.missing_only:
+            say("Existing .env found: asking only for settings it does not have yet.")
 
     # -- primitives ------------------------------------------------------------
+
+    def _settled(self, key: str | None) -> bool:
+        """Missing-only mode, and this question needs no asking."""
+        return self.missing_only and (key is None or key in self.existing)
 
     def _input(self, message: str, default: str = "") -> str:
         if self.defaults_only:
@@ -82,6 +100,12 @@ class Wizard:
     def ask(
         self, key: str | None, message: str, default: str = "", required: bool = False
     ) -> str:
+        if self._settled(key):
+            # The recorded answer verbatim, even when blank: prev() would swap
+            # a deliberately empty optional value for the default.
+            value = self.existing[key] if key else default
+            if value or not required:
+                return self.set(key, value) if key else value
         default = self.prev(key, default) if key else default
         answer = self._input(message, default)
         while required and not answer:
@@ -95,13 +119,20 @@ class Wizard:
 
     def ask_secret(self, key: str, message: str) -> str:
         """Blank keeps the existing value."""
-        if self.defaults_only:
+        if self.defaults_only or (key in self.existing and self._settled(key)):
             return self.set(key, self.prev(key))
         keep = " (blank = keep existing)" if self.prev(key) else ""
         answer = prompts.secret(f"{message}{keep}")
         return self.set(key, answer or self.prev(key))
 
-    def confirm(self, message: str, default: bool = False) -> bool:
+    def confirm(
+        self, message: str, default: bool = False, key: str | None = None
+    ) -> bool:
+        """`key`: the .env key that records this answer (e.g. ACME_DIRECTORY_URL
+        for "use ACME?"). In missing-only mode the question is asked only when
+        that key is new; an unkeyed confirm takes its default."""
+        if self._settled(key):
+            return default
         if self.defaults_only:
             say(f"{message} [{'Y/n' if default else 'y/N'}]")
             return default

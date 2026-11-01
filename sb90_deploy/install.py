@@ -18,6 +18,7 @@ import sys
 from . import docker, envfile
 from .console import Failure, banner, info, ok, paint, say, wait, warn
 from .deployment import Deployment
+from .wizard import MISSING_ONLY_ENV
 
 _TAG_IN_LOAD = re.compile(r":(v\d+\.\d+\.\d+\S*)$")
 
@@ -37,6 +38,47 @@ def run_setup(deployment: Deployment) -> None:
             "Re-run it directly to see the failure: ./install.sh (or python3 bootstrap.py setup)",
         )
     ok("Environment configured.")
+
+
+def _wizard_supports_missing_only() -> bool:
+    """The interpreter setup.py will run under has a wizard with missing-only
+    mode. An older one would ignore the flag and re-ask every question."""
+    probe = "from sb90_deploy.wizard import MISSING_ONLY_ENV"
+    return (
+        subprocess.call(
+            [sys.executable, "-c", probe],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        == 0
+    )
+
+
+def complete_env(deployment: Deployment, assume_defaults: bool = False) -> None:
+    """Bring an existing .env up to this bundle's setup.py: run it asking only
+    for the keys the .env lacks.
+
+    Install and update used to skip the wizard whenever a .env existed, so a
+    question a later release added (peek-a-boo's ACME settings) never reached a
+    host installed before it. Never fatal: the existing values stay either way.
+    `assume_defaults` (or no TTY) fills new keys with their defaults unasked.
+    """
+    setup = os.path.join(deployment.root, "setup.py")
+    retry = "Re-run it to add them: python3 bootstrap.py setup"
+    if not os.path.isfile(setup):
+        return
+    if not _wizard_supports_missing_only():
+        warn("this sb90-deploy cannot ask only for new .env settings; " + retry)
+        return
+    env = {**os.environ, MISSING_ONLY_ENV: "1"}
+    if assume_defaults or not sys.stdin.isatty():
+        env["SB90_WIZARD_DEFAULTS"] = "1"
+    wait("Checking .env for settings this release adds...")
+    code = subprocess.call([sys.executable, setup], cwd=deployment.root, env=env)
+    if code != 0:
+        warn(f"setup.py exited with {code}; existing .env settings were kept. " + retry)
+        return
+    ok(".env is up to date.")
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -130,7 +172,8 @@ def install(deployment: Deployment, args) -> int:
     deployment.require_compose_file()
 
     if os.path.isfile(deployment.env_file):
-        ok("Existing .env found. Skipping configuration wizard.")
+        ok("Existing .env found. Keeping its settings.")
+        complete_env(deployment)
     else:
         run_setup(deployment)
 

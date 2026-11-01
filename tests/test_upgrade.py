@@ -7,6 +7,8 @@ import tarfile
 
 from conftest import make_bundle, run_cli
 
+from sb90_deploy import envfile
+
 
 def _update(deployment, *args):
     return run_cli("update", "--root", str(deployment), "--yes", *args)
@@ -285,3 +287,53 @@ def test_lookup_failure_names_each_cause(monkeypatch):
 
     reason, hints = _failure(monkeypatch, urllib.error.URLError("no route"))
     assert "could not reach api.github.com (no route)" in reason
+
+
+# Asks for one key the running release's .env lacks and keeps the rest; the
+# pre-upgrade env must not gain it. Imports the wizard from this checkout.
+_WIZARD_SETUP = """
+from sb90_deploy.wizard import Wizard
+w = Wizard("demo")
+w.ask("SECRET", "secret?", default="clobbered")
+w.ask("NEW_KEY", "new?", default="fresh")
+w.write()
+"""
+
+
+def _sb90_on_path(monkeypatch):
+    from pathlib import Path
+
+    root = str(Path(__file__).resolve().parents[1])
+    monkeypatch.setenv("PYTHONPATH", root)
+
+
+def test_upgrade_adds_settings_the_new_release_asks_for(
+    deployment, tmp_path, calls, monkeypatch
+):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    _sb90_on_path(monkeypatch)
+    package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
+    (package / "setup.py").write_text(_WIZARD_SETUP)
+
+    assert _update(deployment, "--package", str(package)) == 0
+
+    env = envfile.read(str(deployment / ".env"))
+    assert env["NEW_KEY"] == "fresh" and env["SECRET"] == "keep-me"
+    assert env["DEMO_VERSION"] == "v2.0.0"
+    backup = envfile.read(str(deployment / ".env.bak-v1.0.0"))
+    assert "NEW_KEY" not in backup and backup["DEMO_VERSION"] == "v1.0.0"
+
+
+def test_upgrade_with_an_old_wizard_warns_instead_of_reasking(
+    deployment, tmp_path, calls, monkeypatch, capsys
+):
+    from sb90_deploy import install
+
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    monkeypatch.setattr(install, "_wizard_supports_missing_only", lambda: False)
+    package = make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True)
+    (package / "setup.py").write_text("raise SystemExit('must not run')\n")
+
+    assert _update(deployment, "--package", str(package)) == 0
+    assert "python3 bootstrap.py setup" in capsys.readouterr().out
+    assert "NEW_KEY" not in (deployment / ".env").read_text()

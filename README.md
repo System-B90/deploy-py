@@ -99,6 +99,18 @@ w.sso(hive_url)  # browser → password → retry → MANUAL_ENTRY_REQUIRED
 w.write()  # keeps keys it does not own
 ```
 
+`install` over an existing `.env` and every `update` re-run the bundle's `setup.py`
+in **missing-only** mode (`SB90_WIZARD_MISSING_ONLY=1`): a question whose key the
+`.env` already has keeps its value unasked, and an unkeyed one takes its default,
+so only settings a newer release added are asked (filled with defaults under
+`update --yes` or without a TTY). Give a gate the key that records its answer so
+it is asked exactly once:
+
+```python
+if w.confirm("Issue the certificate from an ACME server?", key="ACME_DIRECTORY_URL"):
+    ...
+```
+
 ## CI
 
 Bundling needs the `bundle` extra (`pip install "sb90-deploy[bundle]"`): wheels are

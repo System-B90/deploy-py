@@ -28,6 +28,7 @@ from . import delta, docker, envfile
 from .archive import safe_extract
 from .console import Failure, confirm, log, ok, report, say, warn
 from .deployment import Deployment
+from .install import complete_env
 from .spec import (
     COMPOSE_FILE,
     VERSION_FILE,
@@ -565,10 +566,15 @@ class Upgrade:
                     "could not refresh .venv - it will be rebuilt on the next ./update.sh run"
                 )
 
+    def update_env(self) -> None:
+        """Ask for the .env settings the new release's setup.py adds (it is in
+        place now; refresh_bundle copied it). The pre-upgrade .env is kept."""
+        shutil.copy2(self.d.env_file, f"{self.d.env_file}.bak-{self.previous}")
+        complete_env(self.d, assume_defaults=self.args.yes)
+
     def roll(self) -> None:
         """Service by service, each healthy before the next. ui first (it runs
         the migrations), proxy last (the public endpoint blinks last)."""
-        shutil.copy2(self.d.env_file, f"{self.d.env_file}.bak-{self.previous}")
         envfile.set_value(self.d.env_file, self.spec.version_var, self.target)
         # A real env var outranks --env-file in compose substitution; pin it.
         self.compose.extra_env[self.spec.version_var] = self.target
@@ -695,6 +701,7 @@ class Upgrade:
             )
         self.fetch_images()
         self.refresh_bundle()
+        self.update_env()
         self.roll()
         self.verify()
 

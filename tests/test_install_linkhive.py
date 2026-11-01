@@ -83,3 +83,27 @@ def test_checkout_mode_reads_env_at_repo_root(tmp_path):
     assert found.root == str(repo) and found.env_file == str(repo / ".env")
     assert found.compose_file == str(repo / "deploy" / "docker-compose.yml")
     assert sys.executable
+
+
+def test_install_over_existing_env_asks_only_for_new_settings(
+    tmp_path, calls, monkeypatch
+):
+    from pathlib import Path
+
+    from sb90_deploy import envfile
+
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1]))
+    root = make_bundle(tmp_path / "b", "v3.1.0")
+    (root / ".env").write_text("SECRET=keep-me\n")
+    (root / "setup.py").write_text(
+        "from sb90_deploy.wizard import Wizard\n"
+        "w = Wizard('demo')\n"
+        "w.ask('SECRET', 'secret?', default='clobbered')\n"
+        "w.ask('NEW_KEY', 'new?', default='fresh')\n"
+        "w.write()\n"
+    )
+
+    assert run_cli("install", "--root", str(root)) == 0
+
+    env = envfile.read(str(root / ".env"))
+    assert env["SECRET"] == "keep-me" and env["NEW_KEY"] == "fresh"

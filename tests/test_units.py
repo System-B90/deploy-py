@@ -297,3 +297,52 @@ def test_wizard_defaults_keep_loopback_bind(tmp_path, monkeypatch):
     w.ports()
     w.write()
     assert envfile.read(str(env))["DEMO_BIND_IP"] == "127.0.0.3"
+
+
+def test_wizard_missing_only_asks_just_the_new_keys(tmp_path, monkeypatch):
+    from sb90_deploy import prompts
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    asked = []
+    monkeypatch.setattr(
+        prompts, "text", lambda message, default="": asked.append(message) or "typed"
+    )
+    monkeypatch.setattr(
+        prompts, "confirm", lambda message, default=False: asked.append(message) or True
+    )
+    monkeypatch.setattr(
+        prompts, "secret", lambda message: asked.append(message) or "typed"
+    )
+    monkeypatch.setenv("SB90_WIZARD_MISSING_ONLY", "1")
+    monkeypatch.delenv("SB90_WIZARD_DEFAULTS", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("OLD=kept\nGATE=\nOPTIONAL=\nTOKEN=s3cret\n")
+    w = Wizard(AppSpec(APP), env_path=str(env))
+
+    assert w.ask("OLD", "old?") == "kept"
+    # A deliberately blank answer is not swapped for the default.
+    assert w.ask("OPTIONAL", "optional?", default="fallback") == ""
+    assert w.ask_secret("TOKEN", "token?") == "s3cret"
+    assert w.confirm("gate?", default=False, key="GATE") is False
+    assert w.confirm("unkeyed?", default=False) is False
+    assert w.ask(None, "unkeyed text?", "dflt") == "dflt"
+    assert asked == []
+
+    assert w.confirm("new gate?", key="NEW_GATE") is True
+    assert w.ask("NEW", "new?") == "typed"
+    assert asked == ["new gate?", "new?"]
+
+
+def test_wizard_missing_only_still_asks_a_required_blank(tmp_path, monkeypatch):
+    from sb90_deploy import prompts
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    monkeypatch.setattr(prompts, "text", lambda message, default="": "given")
+    monkeypatch.setenv("SB90_WIZARD_MISSING_ONLY", "1")
+    monkeypatch.delenv("SB90_WIZARD_DEFAULTS", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("HOST=\n")
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    assert w.ask("HOST", "host?", required=True) == "given"
