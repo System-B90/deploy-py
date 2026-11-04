@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+from urllib.parse import urlparse
 
 from . import docker, envfile
 from .console import Failure, banner, info, ok, say, wait
@@ -22,6 +23,22 @@ from .deployment import Deployment
 _HIVE_NETWORK = re.compile(r"hive.*net|net.*hive")
 _PROXYISH = re.compile(r"nginx|proxy")
 CONFIG_FILES_LABEL = "com.docker.compose.project.config_files"
+
+
+#: The alias Hive's nginx gets when nothing names Hive's host (the school's Hive).
+DEFAULT_HIVE_HOSTNAME = "chive.bis.net"
+
+
+def hive_hostname(env: dict[str, str]) -> str:
+    """The host the app reaches Hive at, which is the alias Hive's nginx must answer to."""
+    explicit = os.environ.get("HIVE_HOSTNAME") or env.get("HIVE_HOSTNAME")
+    if explicit:
+        return explicit
+    url = env.get("NEXT_PUBLIC_HIVE_URL") or env.get("HIVE_URL") or ""
+    return (
+        urlparse(url if "://" in url else f"https://{url}").hostname
+        or DEFAULT_HIVE_HOSTNAME
+    )
 
 
 def find_network() -> str:
@@ -95,7 +112,7 @@ def link_hive(deployment: Deployment, args) -> int:
             "This bundle does not support a co-located Hive.",
         )
     env = deployment.env()
-    hostname = os.environ.get("HIVE_HOSTNAME") or env.get("HIVE_HOSTNAME") or "hive.org"
+    hostname = hive_hostname(env)
 
     network = os.environ.get("HIVE_NETWORK_NAME") or find_network()
     ok(f"Using Hive network: {network}")

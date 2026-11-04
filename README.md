@@ -90,10 +90,10 @@ nginx) are saved too, since an air-gapped host has no other way to get them.
 from sb90_deploy.wizard import Wizard
 
 w = Wizard()  # reads app.json + existing .env
-domain = w.domain(example="bluz.example.com")
+domain = w.domain(example="bluz.bis.net")
 w.ports()
 w.tls(domain, ssl_dir="nginx/ssl")
-hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", "https://hive.org")
+hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", "https://chive.bis.net")
 w.generated("NEXTAUTH_SECRET")
 w.sso(hive_url)  # browser → password → retry → MANUAL_ENTRY_REQUIRED
 w.write()  # keeps keys it does not own

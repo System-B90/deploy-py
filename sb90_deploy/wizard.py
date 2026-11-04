@@ -16,7 +16,7 @@ Typical use:
     domain = w.domain()
     w.ports()
     w.tls(domain, ssl_dir="nginx/ssl")
-    hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", default="https://hive.org")
+    hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", default="https://chive.bis.net")
     w.generated("NEXTAUTH_SECRET")
     w.sso(hive_url, redirect_uri=w.url + "/api/auth/callback/hive")
     w.write()
@@ -66,6 +66,8 @@ class Wizard:
             app = AppSpec.load(SPEC_FILE)
         self.spec = app if isinstance(app, AppSpec) else None
         self.display_name = self.spec.display_name if self.spec else (app or "the app")
+        # The app's own short name (bluz / madash / peekaboo), for example hostnames.
+        self.app_name = self.spec.name if self.spec else (app or "")
         self.env_path = env_path
         self.existing = envfile.read(env_path)
         self.values: OrderedDict[str, str] = OrderedDict()
@@ -150,7 +152,7 @@ class Wizard:
     def domain(
         self,
         message: str | None = None,
-        example: str = "app.example.com",
+        example: str | None = None,
         key: str | None = None,
         default: str = "",
     ) -> str:
@@ -165,6 +167,7 @@ class Wizard:
         default = from_url or default
         if key:
             default = self.prev(key, default)
+        example = example or f"{self.app_name or 'bluz'}.bis.net"
         message = message or f"Domain name for {self.display_name} (e.g. {example})"
         domain = self.ask(key, message, default, required=True)
         self._set_url(domain)
