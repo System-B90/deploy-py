@@ -107,3 +107,35 @@ def test_install_over_existing_env_asks_only_for_new_settings(
 
     env = envfile.read(str(root / ".env"))
     assert env["SECRET"] == "keep-me" and env["NEW_KEY"] == "fresh"
+
+
+def test_link_hive_alias_follows_the_apps_hive_url(tmp_path, calls, monkeypatch):
+    """No HIVE_HOSTNAME: alias Hive's nginx as the host the app's Hive URL names."""
+    root = make_bundle(tmp_path / "b", "v3.1.0")
+    (root / ".env").write_text("NEXT_PUBLIC_HIVE_URL=https://hive.school.test/\n")
+    (root / "docker-compose.hive-local.yml").write_text("services: {}\n")
+    monkeypatch.delenv("HIVE_HOSTNAME", raising=False)
+    monkeypatch.setenv("STUB_NETWORKS", "bridge,hive-stack_hive-net")
+    monkeypatch.setenv("STUB_CONTAINERS", "demo-proxy,hive-nginx,hive-db")
+
+    assert run_cli("link-hive", "--root", str(root)) == 0
+
+    assert (
+        "network connect --alias hive.school.test hive-stack_hive-net hive-nginx"
+        in calls.joined()
+    )
+
+
+def test_hive_hostname_falls_back_to_the_schools_hive(monkeypatch):
+    from sb90_deploy.linkhive import DEFAULT_HIVE_HOSTNAME, hive_hostname
+
+    monkeypatch.delenv("HIVE_HOSTNAME", raising=False)
+    assert DEFAULT_HIVE_HOSTNAME == "chive.bis.net"
+    assert hive_hostname({}) == "chive.bis.net"
+    assert hive_hostname({"HIVE_URL": "chive.bis.net:8443"}) == "chive.bis.net"
+    assert (
+        hive_hostname(
+            {"HIVE_HOSTNAME": "h.test", "NEXT_PUBLIC_HIVE_URL": "https://x.test"}
+        )
+        == "h.test"
+    )

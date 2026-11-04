@@ -346,3 +346,14 @@ def test_wizard_missing_only_still_asks_a_required_blank(tmp_path, monkeypatch):
     env.write_text("HOST=\n")
     w = Wizard(AppSpec(APP), env_path=str(env))
     assert w.ask("HOST", "host?", required=True) == "given"
+
+
+def test_wizard_domain_example_is_the_apps_bis_net_host(tmp_path):
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    w = Wizard(AppSpec(APP), env_path=str(tmp_path / ".env"))
+    seen = []
+    w.ask = lambda key, message, default="", **kw: seen.append(message) or "x.test"
+    w.domain()
+    assert seen == [f"Domain name for {w.display_name} (e.g. {APP['name']}.bis.net)"]
