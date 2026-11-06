@@ -70,6 +70,7 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
   "state": ["nginx/ssl"],              // host state an upgrade never overwrites
   "venv_packages": ["bluz"],       // operator tooling installed into .venv
   "post_install": ["..."],             // extra lines printed after install
+  "delta": { "pinned": ["mongodb-community-server.tar"] }, // never diffed, see Delta packages
   "bundle": {
     "dir": "bluz",
     "files": {"docker-compose.yml": "deploy/docker-compose.release.yml",
@@ -150,6 +151,13 @@ How it stays small, per image layer of the target:
 | New (no counterpart), or patches would be bigger | the layer, `--ultra -22 --long` |
 
 Wheels ship only when some base lacks them; bundle files ship whole (a few KB).
+
+Image archives in app.json's `delta.pinned` (images pinned to a version that
+rarely moves, like a database) are never diffed — patching a large image costs
+tens of minutes for a change that almost never comes. The delta only compares
+their layer diffIDs: a base holding the same layers is served for free, a base
+whose pinned image changed is skipped with a warning, and its hosts upgrade with
+the full offline package.
 
 On the host, `update --package <delta>` checks the running release is a listed
 base, `docker save`s its running images, rebuilds every target image archive

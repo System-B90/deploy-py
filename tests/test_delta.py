@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 
 import pytest
-from conftest import make_bundle, run_cli
+from conftest import APP, make_bundle, run_cli
 
 from sb90_deploy import delta
 from sb90_deploy.archive import Image, SavedImages, digest, safe_extract, write_image
@@ -43,17 +43,26 @@ def _ui(version: str, extra: bytes = b""):
     return _image(f"ghcr.io/system-b90/demo/ui:{version}", layers)
 
 
-def _nginx():
-    return _image("nginx:1.27-alpine", NGINX)
+def _nginx(layers: list[bytes] = NGINX):
+    return _image("nginx:1.27-alpine", layers)
 
 
 def _offline(
-    root: Path, version: str, wheels: dict[str, bytes], ui=None, tool="0.6.0"
+    root: Path,
+    version: str,
+    wheels: dict[str, bytes],
+    ui=None,
+    tool="0.6.0",
+    nginx=None,
+    app: dict | None = None,
 ) -> Path:
-    make_bundle(root, version, extra={"requirements.txt": f"sb90-deploy=={tool}\n"})
+    extra = {"requirements.txt": f"sb90-deploy=={tool}\n"}
+    if app is not None:
+        extra["app.json"] = json.dumps(app)
+    make_bundle(root, version, extra=extra)
     (root / "images").mkdir()
     _save(root / "images" / "demo-ui.tar", [ui or _ui(version)])
-    _save(root / "images" / "nginx.tar", [_nginx()])
+    _save(root / "images" / "nginx.tar", [nginx or _nginx()])
     (root / "wheels").mkdir()
     for name, data in wheels.items():
         (root / "wheels" / name).write_bytes(data)
@@ -172,6 +181,30 @@ def test_bases_whose_tools_predate_deltas_are_skipped(packages, tmp_path, capsys
     assert delta.read_meta(str(root))["bases"] == ["v1.0.0"]
     assert "skipping base v0.9.0" in capsys.readouterr().out
     assert _craft(packages, tmp_path / "none", "v0.9.0") is None
+
+
+def test_a_pinned_image_is_checked_never_diffed(packages, tmp_path, capsys):
+    """nginx.tar is pinned and moved in v1.1.0: v1.0.0 still holds the old one,
+    so it is dropped rather than patched; v1.1.0 matches and ships nothing."""
+    moved = _nginx([random.Random(3).randbytes(60_000)])
+    packages["v1.1.0"] = _offline(
+        tmp_path / "v110b" / "demo", "v1.1.0", WHEELS_1, nginx=moved
+    )
+    packages["v2.0.0"] = _offline(
+        tmp_path / "v200b" / "demo",
+        "v2.0.0",
+        WHEELS_2,
+        nginx=moved,
+        app={**APP, "delta": {"pinned": ["nginx.tar"]}},
+    )
+
+    root = _extract(_craft(packages, tmp_path, "v1.0.0", "v1.1.0"), tmp_path)
+    meta = delta.read_meta(str(root))
+
+    assert meta["bases"] == ["v1.1.0"]
+    assert "skipping base v1.0.0: pinned nginx.tar changed" in capsys.readouterr().out
+    assert set(meta["layers"]) == {digest(_app_layer("v2.0.0"))}
+    assert _craft(packages, tmp_path / "none", "v1.0.0") is None
 
 
 # -- through `update --package` ------------------------------------------------

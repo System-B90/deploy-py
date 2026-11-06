@@ -19,6 +19,10 @@ Image layers are where the size is. Per layer of the target release:
     - one zstd --patch-from per distinct base counterpart (the layer at the
       same position of the same image in that base): only the bytes that changed
 
+Archives listed in app.json's `delta.pinned` are never diffed: a base whose
+pinned image's diffIDs differ from the target's is dropped (its hosts need the
+full package), so every remaining base has those layers and none ship.
+
 The host (`update --package <delta>`) `docker save`s the images it is running,
 rebuilds every target image archive from those layers + the patches, checks each
 layer against its diffID, and continues as a normal offline upgrade. A host not
@@ -177,6 +181,22 @@ def descend(root: str) -> str:
     return root
 
 
+def changed_pinned(target: Package, base: Package, pinned: set[str]) -> list[str]:
+    """The pinned archives whose layers differ between `base` and `target`.
+    Only diffIDs are compared, so a pinned image is never diffed; when all
+    match, every base has its layers and `_stage` ships none of them."""
+
+    def layers(package: Package, archive: str) -> list[list[str]]:
+        saved = package.images.get(archive)
+        return [image.diff_ids for image in saved.images] if saved else []
+
+    return [
+        archive
+        for archive in sorted(pinned)
+        if layers(target, archive) != layers(base, archive)
+    ]
+
+
 def _hex(diff_id: str) -> str:
     return diff_id.split(":", 1)[1]
 
@@ -229,6 +249,13 @@ def craft(target_path: str, base_paths: list[str], out: str) -> str | None:
                 warn(
                     f"skipping base {base.version}: bundled with an sb90-deploy"
                     " that cannot apply deltas - its hosts need the full package"
+                )
+                continue
+            changed = changed_pinned(target, base, spec.delta_pinned)
+            if changed:
+                warn(
+                    f"skipping base {base.version}: pinned {', '.join(changed)}"
+                    " changed since - its hosts need the full package"
                 )
                 continue
             bases[base.version] = base

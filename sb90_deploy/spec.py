@@ -58,6 +58,10 @@ class AppSpec:
         )
         # Extra lines printed after a successful install.
         self.post_install = list(data.get("post_install", []))
+        # Image archives (e.g. "mongodb-community-server.tar") a delta never
+        # diffs: a base must hold them unchanged, or its hosts need the full
+        # package. For images pinned to a version that rarely moves.
+        self.delta_pinned = set(data.get("delta", {}).get("pinned", []))
 
     @classmethod
     def load(cls, path):
