@@ -337,3 +337,54 @@ def test_upgrade_with_an_old_wizard_warns_instead_of_reasking(
     assert _update(deployment, "--package", str(package)) == 0
     assert "python3 bootstrap.py setup" in capsys.readouterr().out
     assert "NEW_KEY" not in (deployment / ".env").read_text()
+
+
+# -- opt-in overlay services (hive-feed) -----------------------------------------
+
+SIDECAR = {
+    "service": "hive-feed",
+    "file": "docker-compose.hive-feed.yml",
+    "container": "demo-hive-feed",
+}
+
+
+def _with_sidecar(root):
+    import json
+
+    spec = json.loads((root / "app.json").read_text())
+    spec["sidecars"] = [SIDECAR]
+    (root / "app.json").write_text(json.dumps(spec))
+    (root / "docker-compose.hive-feed.yml").write_text("services: {}\n")
+    return root
+
+
+def _sidecar_ups(calls):
+    return [c for c in _compose_calls(calls) if c[-1] == "hive-feed" and "up" in c]
+
+
+def test_restarts_a_sidecar_that_was_running(deployment, tmp_path, calls, monkeypatch):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    monkeypatch.setenv("STUB_CONTAINERS", "demo-ui,demo-proxy,demo-hive-feed")
+    _with_sidecar(deployment)
+    package = _with_sidecar(make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True))
+
+    assert _update(deployment, "--package", str(package)) == 0
+    ups = _sidecar_ups(calls)
+    assert len(ups) == 1
+    assert str(deployment / "docker-compose.hive-feed.yml") in ups[0]
+    assert str(deployment / "docker-compose.yml") in ups[0]
+    assert "--no-deps" in ups[0]
+    # after the roll, never before it
+    joined = calls.joined()
+    last_roll = max(i for i, c in enumerate(joined) if c.endswith("--no-deps proxy"))
+    assert joined.index(" ".join(ups[0])) > last_roll
+
+
+def test_leaves_a_stopped_sidecar_stopped(deployment, tmp_path, calls, monkeypatch):
+    monkeypatch.setenv("STUB_IMAGE", "ghcr.io/system-b90/demo/ui:v2.0.0")
+    monkeypatch.setenv("STUB_CONTAINERS", "demo-ui,demo-proxy")
+    _with_sidecar(deployment)
+    package = _with_sidecar(make_bundle(tmp_path / "pkg", "v2.0.0", with_images=True))
+
+    assert _update(deployment, "--package", str(package)) == 0
+    assert _sidecar_ups(calls) == []

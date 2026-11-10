@@ -90,6 +90,7 @@ class Upgrade:
         self.backup_dir = ""
         self.bundle_backup = ""
         self.compose = deployment.compose()
+        self.sidecars: list[dict] = []
 
     # -- failure path --------------------------------------------------------
 
@@ -111,6 +112,11 @@ class Upgrade:
             hints += [
                 "The bundle's own files were replaced. The previous copies are in:",
                 f"  {self.bundle_backup}",
+            ]
+        for sidecar in self.sidecars:
+            hints += [
+                f"{sidecar['service']} was running before the upgrade. Start it again with:",
+                f"  {self._sidecar_compose(sidecar).describe('up', '-d', '--no-deps', sidecar['service'])}",
             ]
         if self.backup_dir:
             restore = self._backup_script("restore_")
@@ -590,6 +596,40 @@ class Upgrade:
                 )
             ok(f"{service} is up")
 
+    def _sidecar_compose(self, sidecar: dict) -> docker.Compose:
+        path = os.path.join(self.d.compose_dir, sidecar["file"])
+        return docker.Compose(
+            self.d.compose_files() + [path], self.d.env_file, self.compose.extra_env
+        )
+
+    def detect_sidecars(self) -> None:
+        """Remember which opt-in overlay services run now. Recreating ui stops
+        its dependents (hive-feed), and the base compose files cannot start them."""
+        self.sidecars = [
+            s for s in self.spec.sidecars if docker.container_running(s["container"])
+        ]
+        if self.sidecars:
+            names = ", ".join(s["service"] for s in self.sidecars)
+            log(self.spec.name, f"running overlay services to restart: {names}")
+
+    def restart_sidecars(self) -> None:
+        """Bring back what detect_sidecars saw, from the refreshed overlay file.
+        The upgrade itself already succeeded, so a failure here only warns."""
+        for sidecar in self.sidecars:
+            service = sidecar["service"]
+            compose = self._sidecar_compose(sidecar)
+            if not os.path.isfile(compose.files[-1]):
+                warn(
+                    f"{service} was running but {sidecar['file']} is gone - not restarted"
+                )
+                continue
+            log(self.spec.name, f"restarting {service}...")
+            if compose.ok("up", "-d", "--wait", "--no-deps", service):
+                ok(f"{service} is up")
+            else:
+                warn(f"could not restart {service} - start it with:")
+                say(f"        {compose.describe('up', '-d', '--no-deps', service)}")
+
     def verify(self) -> None:
         log(self.spec.name, f"verifying {self.spec.health_url}...")
         retries = int(self.spec.setting("HEALTH_RETRIES", "30"))
@@ -654,6 +694,7 @@ class Upgrade:
                 "This upgrades a live deployment. Start it first:",
                 f"  {self.compose.describe('up', '-d', '--wait')}",
             )
+        self.detect_sidecars()
         do_backup = bool(spec.backup) and not args.skip_backup
         if do_backup and not self._backup_script():
             raise Failure(
@@ -704,6 +745,7 @@ class Upgrade:
         self.update_env()
         self.roll()
         self.verify()
+        self.restart_sidecars()
 
         say()
         ok(f"{spec.display_name} upgraded {self.previous} -> {self.target}")

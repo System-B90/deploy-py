@@ -62,6 +62,12 @@ class AppSpec:
         # diffs: a base must hold them unchanged, or its hosts need the full
         # package. For images pinned to a version that rarely moves.
         self.delta_pinned = set(data.get("delta", {}).get("pinned", []))
+        # Opt-in overlay services, e.g. {"service": "hive-feed", "file":
+        # "docker-compose.hive-feed.yml", "container": "bluz-hive-feed"}. An
+        # upgrade starts each one that was running again: recreating the
+        # service it depends on stops it, and the base compose files alone
+        # cannot start it.
+        self.sidecars = list(data.get("sidecars", []))
 
     @classmethod
     def load(cls, path):

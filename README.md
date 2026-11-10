@@ -68,6 +68,9 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
              "root_windows": "%ProgramData%\bluz\backups"},          // omit for stateless apps
   "required_files": [],                // must exist after setup.py (peek-a-boo's token file)
   "state": ["nginx/ssl"],              // host state an upgrade never overwrites
+  "sidecars": [{"service": "hive-feed", "file": "docker-compose.hive-feed.yml",
+                "container": "bluz-hive-feed"}], // opt-in overlay services: an upgrade
+                                       // starts each one that was running again
   "venv_packages": ["bluz"],       // operator tooling installed into .venv
   "post_install": ["..."],             // extra lines printed after install
   "delta": { "pinned": ["mongodb-community-server.tar"] }, // never diffed, see Delta packages
