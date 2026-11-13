@@ -22,7 +22,11 @@ BUMPS = ("patch", "minor", "major")
 
 JSON_VERSION = r'("version"\s*:\s*)"[^"]*"'
 PY_VERSION = r"""(__version__\s*=\s*)["'][^"']*["']"""
-PATTERNS = {"json": JSON_VERSION, "python": PY_VERSION}
+# Line-anchored so an inline pin like `foo = { version = "1" }` never matches; the
+# first line-start `version =` is [project]'s as long as that table comes first.
+TOML_VERSION = r"""(?m)^(version\s*=\s*)["'][^"'\n]*["']"""
+PATTERNS = {"json": JSON_VERSION, "python": PY_VERSION, "toml": TOML_VERSION}
+DEFAULT_COMMIT_MESSAGE = "chore: bump version to {version}"
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,8 @@ class Manifest:
 
     @classmethod
     def from_spec(cls, entry: "str | dict") -> "Manifest":
-        """app.json form: "package.json", or {"path", "format": json|python, "count"}."""
+        """app.json form: "package.json", or {"path", "format", "count"}; format is
+        json (default), python (__version__) or toml (a line-start `version =`)."""
         if isinstance(entry, str):
             return cls(entry)
         return cls(
@@ -139,6 +144,7 @@ def publish(args) -> int:
     config = spec.data.get("release", {})
     manifests = [Manifest.from_spec(entry) for entry in config.get("manifests", [])]
     branches = config.get("branches", ["master"])
+    commit_message = config.get("commit_message", DEFAULT_COMMIT_MESSAGE)
 
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if branch not in branches:
@@ -183,7 +189,7 @@ def publish(args) -> int:
     updated = update_manifests(root, manifests, str(new))
     if updated:
         _git(root, "add", *updated)
-        _git(root, "commit", "-m", f"chore: bump version to {new}")
+        _git(root, "commit", "-m", commit_message.format(version=new))
     _git(root, "tag", "-a", tag, "-m", f"Release {new}")
 
     if args.dry:

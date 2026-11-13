@@ -189,7 +189,8 @@ python -m sb90_deploy publish [--bump patch|minor|major] [--rc/--no-rc] [--versi
 
 It takes the latest `v*` tag (an rc sorts below its release), picks the next
 version, writes it into every file in app.json's `release.manifests`, commits
-`chore: bump version to X`, and pushes the branch and the annotated tag. That tag
+it (`chore: bump version to X` unless `release.commit_message` says otherwise),
+and pushes the branch and the annotated tag. That tag
 is what the release workflow and `bundle` build from. `--dry` commits locally
 and pushes nothing.
 
@@ -199,8 +200,10 @@ and pushes nothing.
   "manifests": [
     "package.json",                       // first "version" field
     {"path": "package-lock.json", "count": 2},   // root + packages[""]
-    {"path": "cli/app_cli/__init__.py", "format": "python"}  // __version__
-  ]
+    {"path": "cli/app_cli/__init__.py", "format": "python"},  // __version__
+    {"path": "pyproject.toml", "format": "toml"}  // first line-start `version =`
+  ],
+  "commit_message": "chore: bump version to {version}"  // default; {version} = X.Y.Z
 }
 ```
 
