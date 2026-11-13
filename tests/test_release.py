@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from sb90_deploy import cli, release
-from sb90_deploy.release import PY_VERSION, Manifest, Version
+from sb90_deploy.release import PY_VERSION, TOML_VERSION, Manifest, Version
 
 
 def v(text: str) -> Version:
@@ -93,6 +93,44 @@ def test_update_manifests(tmp_path: Path) -> None:
     ) == '__version__ = "1.1.0"\n'
 
 
+PYPROJECT = """[build-system]
+requires = ["hatchling >= 1.26"]
+
+[project]
+name = "lib"
+version = "1.0.0"
+dependencies = [
+    "foo>=2",
+]
+
+[tool.poetry.dependencies]
+bar = { version = "3.0" }
+
+[tool.other]
+version = "9.9.9"
+"""
+
+
+def test_update_manifests_toml_rewrites_only_the_project_version(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+
+    updated = release.update_manifests(
+        tmp_path, [Manifest("pyproject.toml", TOML_VERSION)], "1.1.0"
+    )
+
+    assert updated == ["pyproject.toml"]
+    assert (tmp_path / "pyproject.toml").read_text(
+        encoding="utf-8"
+    ) == PYPROJECT.replace('version = "1.0.0"', 'version = "1.1.0"')
+
+
+def test_manifest_from_spec_toml_format() -> None:
+    manifest = Manifest.from_spec({"path": "pyproject.toml", "format": "toml"})
+    assert manifest == Manifest("pyproject.toml", TOML_VERSION)
+
+
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
@@ -107,7 +145,9 @@ APP = {
 }
 
 
-def _repo(tmp_path: Path, branch: str = "master") -> tuple[Path, Path]:
+def _repo(
+    tmp_path: Path, branch: str = "master", app: dict | None = None
+) -> tuple[Path, Path]:
     origin, repo = tmp_path / "origin.git", tmp_path / "repo"
     _git(tmp_path, "init", "-q", "--bare", str(origin))
     _git(tmp_path, "init", "-q", "-b", branch, str(repo))
@@ -119,7 +159,7 @@ def _repo(tmp_path: Path, branch: str = "master") -> tuple[Path, Path]:
         _git(repo, "config", key, value)
     _git(repo, "remote", "add", "origin", str(origin))
     (repo / "deploy").mkdir()
-    (repo / "deploy" / "app.json").write_text(json.dumps(APP), encoding="utf-8")
+    (repo / "deploy" / "app.json").write_text(json.dumps(app or APP), encoding="utf-8")
     (repo / "package.json").write_text('{"version": "0.0.0"}\n', encoding="utf-8")
     (repo / "v.py").write_text('__version__ = "0.0.0"\n', encoding="utf-8")
     _git(repo, "add", ".")
@@ -189,3 +229,21 @@ def test_publish_declined_confirmation_changes_nothing(
         cli.main(["publish", "--repo", str(repo), "--dry"])
 
     assert _git(repo, "log", "-1", "--format=%s") == "init"
+
+
+def test_publish_uses_the_configured_commit_message(tmp_path: Path) -> None:
+    app = {
+        **APP,
+        "release": {
+            "manifests": [{"path": "v.py", "format": "python"}],
+            "commit_message": "Vibe-Bumped version to {version}",
+        },
+    }
+    _, repo = _repo(tmp_path, app=app)
+
+    code = cli.main(
+        ["publish", "--repo", str(repo), "--bump", "minor", "--no-rc", "-y", "--dry"]
+    )
+
+    assert code == 0
+    assert _git(repo, "log", "-1", "--format=%s") == "Vibe-Bumped version to 1.5.0"
