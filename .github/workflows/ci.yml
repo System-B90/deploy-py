@@ -61,7 +61,9 @@ jobs:
     # check its minimum version with vermin.
     bootstrap-py36:
         name: Bootstrap on Python 3.6
-        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "dind"]') }}
+        # GitHub-hosted: the job runs in a container and the self-hosted pool
+        # has no Docker (the dind runners it was written for are gone). ~1 min.
+        runs-on: ubuntu-latest
         timeout-minutes: 10
         container: python:3.6-slim
         steps:
@@ -90,7 +92,9 @@ jobs:
     # python3 (3.10) and no python3-venv, so ensurepip is missing.
     bootstrap-jammy:
         name: Bootstrap on Ubuntu 22.04 without python3-venv
-        runs-on: ${{ (inputs.runner == 'github-hosted' || vars.CI_RUNNER == 'github-hosted') && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "dind"]') }}
+        # GitHub-hosted: the job runs in a container and the self-hosted pool
+        # has no Docker (the dind runners it was written for are gone). ~1 min.
+        runs-on: ubuntu-latest
         timeout-minutes: 10
         container: ubuntu:22.04
         steps:
