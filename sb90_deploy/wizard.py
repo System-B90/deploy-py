@@ -8,7 +8,8 @@ everything around the questions:
 * keys the wizard does not own (<APP>_VERSION from install, HIVE_NETWORK_NAME
   from link-hive) survive a re-run;
 * the domain / bind-IP / port questions (Bluz#412's shared-host logic);
-* TLS (tls.py) and Hive SSO registration (hive.py).
+* TLS (tls.py) and Hive SSO registration (hive.py);
+* the break-glass user, a local login for when Hive is offline.
 
 Typical use:
 
@@ -19,6 +20,7 @@ Typical use:
     hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", default="https://chive.bis.net")
     w.generated("NEXTAUTH_SECRET")
     w.sso(hive_url, redirect_uri=w.url + "/api/auth/callback/hive")
+    w.break_glass()
     w.write()
 
 `SB90_WIZARD_DEFAULTS=1` answers every question with its default — for CI.
@@ -34,6 +36,7 @@ whose answer is recorded in K, so it is asked exactly when K is new.
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import secrets
 import string
@@ -58,6 +61,25 @@ def b64_key(n_bytes: int = 32) -> str:
 def password(length: int = 32) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+BREAK_GLASS_USERNAME = "BREAK_GLASS_USERNAME"
+BREAK_GLASS_PASSWORD_HASH = "BREAK_GLASS_PASSWORD_HASH"
+
+
+def scrypt_hash(secret: str, n: int = 16384, r: int = 8, p: int = 1) -> str:
+    """`scrypt:<N>:<r>:<p>:<salt>:<key>`, base64url without padding.
+
+    The format @system-b90/hive-nextauth checks break-glass logins against.
+    `:` rather than `$`, because Docker Compose interpolates `$` in .env.
+    """
+
+    def b64(raw: bytes) -> str:
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    salt = secrets.token_bytes(16)
+    key = hashlib.scrypt(secret.encode(), salt=salt, n=n, r=r, p=p, dklen=64)
+    return f"scrypt:{n}:{r}:{p}:{b64(salt)}:{b64(key)}"
 
 
 class Wizard:
@@ -271,6 +293,47 @@ class Wizard:
             )
         self.set(id_key, client_id)
         self.set(secret_key, client_secret)
+
+    def break_glass(self, default_username: str = "breakglass") -> str | None:
+        """The break-glass user: a local Admin login for when Hive is offline.
+
+        Writes BREAK_GLASS_USERNAME and BREAK_GLASS_PASSWORD_HASH (scrypt).
+        The password is generated, printed once, and never stored: only its
+        hash reaches .env. A re-run keeps it unless asked to rotate.
+        Returns the new password, or None when the old one was kept.
+        """
+        username = self.ask(
+            BREAK_GLASS_USERNAME,
+            "Break-glass username, for signing in while Hive is offline "
+            "(BREAK_GLASS_USERNAME)",
+            default_username,
+            required=True,
+        )
+        if self.prev(BREAK_GLASS_PASSWORD_HASH) and not self.confirm(
+            "Rotate the break-glass password?", False
+        ):
+            self.keep(BREAK_GLASS_PASSWORD_HASH)
+            return None
+
+        secret = password(24)
+        self.set(BREAK_GLASS_PASSWORD_HASH, scrypt_hash(secret))
+        if self.defaults_only:
+            # CI: the log is not a vault. Nobody needs this password.
+            say("Break-glass password generated (not shown in defaults-only mode).")
+            return secret
+        line = "=" * 64
+        say(paint("yellow", line))
+        say(
+            paint(
+                "yellow", f"  Break-glass login for {self.display_name} (Hive offline)"
+            )
+        )
+        say(f"    username: {username}")
+        say(f"    password: {paint('green', secret)}")
+        say(paint("yellow", "  Save it in your password vault NOW. It is shown once;"))
+        say(paint("yellow", "  .env keeps only a hash. Re-run setup to rotate it."))
+        say(paint("yellow", line))
+        return secret
 
     # -- output ---------------------------------------------------------------
 

@@ -357,3 +357,113 @@ def test_wizard_domain_example_is_the_apps_bis_net_host(tmp_path):
     w.ask = lambda key, message, default="", **kw: seen.append(message) or "x.test"
     w.domain()
     assert seen == [f"Domain name for {w.display_name} (e.g. {APP['name']}.bis.net)"]
+
+
+def test_scrypt_hash_format_and_round_trip():
+    import base64
+    import hashlib
+
+    from sb90_deploy.wizard import scrypt_hash
+
+    stored = scrypt_hash("s3cret")
+    assert "$" not in stored
+    tag, n, r, p, salt, key = stored.split(":")
+    assert (tag, n, r, p) == ("scrypt", "16384", "8", "1")
+
+    def unb64(text):
+        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+    again = hashlib.scrypt(b"s3cret", salt=unb64(salt), n=16384, r=8, p=1, dklen=64)
+    assert again == unb64(key)
+    assert scrypt_hash("s3cret") != stored  # fresh salt each time
+
+
+def test_break_glass_generates_once_and_keeps_on_rerun(tmp_path, monkeypatch, capsys):
+    from sb90_deploy import prompts
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    monkeypatch.delenv("SB90_WIZARD_DEFAULTS", raising=False)
+    monkeypatch.delenv("SB90_WIZARD_MISSING_ONLY", raising=False)
+    monkeypatch.setattr(prompts, "text", lambda message, default="": default)
+    answers = iter([False, True])
+    monkeypatch.setattr(
+        prompts, "confirm", lambda message, default=False: next(answers)
+    )
+    env = tmp_path / ".env"
+
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    secret = w.break_glass()
+    w.write()
+    first = envfile.read(str(env))
+    assert first["BREAK_GLASS_USERNAME"] == "breakglass"
+    assert first["BREAK_GLASS_PASSWORD_HASH"].startswith("scrypt:")
+    assert secret and secret not in env.read_text()
+    assert secret in capsys.readouterr().out
+
+    # Re-run, "Rotate?" → no: the hash survives and nothing is printed.
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    assert w.break_glass() is None
+    w.write()
+    assert (
+        envfile.read(str(env))["BREAK_GLASS_PASSWORD_HASH"]
+        == first["BREAK_GLASS_PASSWORD_HASH"]
+    )
+
+    # Re-run, "Rotate?" → yes: a new password and hash.
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    rotated = w.break_glass()
+    w.write()
+    assert rotated and rotated != secret
+    assert (
+        envfile.read(str(env))["BREAK_GLASS_PASSWORD_HASH"]
+        != first["BREAK_GLASS_PASSWORD_HASH"]
+    )
+
+
+def test_break_glass_missing_only_adds_it_once_on_upgrade(
+    tmp_path, monkeypatch, capsys
+):
+    from sb90_deploy import prompts
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    asked = []
+    monkeypatch.setattr(
+        prompts, "text", lambda message, default="": asked.append(message) or default
+    )
+    monkeypatch.setattr(
+        prompts, "confirm", lambda message, default=False: asked.append(message) or True
+    )
+    monkeypatch.setenv("SB90_WIZARD_MISSING_ONLY", "1")
+    monkeypatch.delenv("SB90_WIZARD_DEFAULTS", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("NEXTAUTH_SECRET=old\n")
+
+    # An install from before break-glass: asked once, password generated.
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    assert w.break_glass()
+    w.write()
+    assert len(asked) == 1  # the username; no "rotate?" with nothing to rotate
+
+    # The next update asks nothing and keeps the hash.
+    asked.clear()
+    stored = envfile.read(str(env))["BREAK_GLASS_PASSWORD_HASH"]
+    w = Wizard(AppSpec(APP), env_path=str(env))
+    assert w.break_glass() is None
+    w.write()
+    assert asked == []
+    assert envfile.read(str(env))["BREAK_GLASS_PASSWORD_HASH"] == stored
+
+
+def test_break_glass_defaults_only_never_prints_the_password(
+    tmp_path, monkeypatch, capsys
+):
+    from sb90_deploy.spec import AppSpec
+    from sb90_deploy.wizard import Wizard
+
+    monkeypatch.setenv("SB90_WIZARD_DEFAULTS", "1")
+    w = Wizard(AppSpec(APP), env_path=str(tmp_path / ".env"))
+    secret = w.break_glass()
+    assert secret and secret not in capsys.readouterr().out
+    assert w.values["BREAK_GLASS_PASSWORD_HASH"].startswith("scrypt:")

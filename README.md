@@ -100,8 +100,14 @@ w.tls(domain, ssl_dir="nginx/ssl")
 hive_url = w.ask("NEXT_PUBLIC_HIVE_URL", "Hive URL", "https://chive.bis.net")
 w.generated("NEXTAUTH_SECRET")
 w.sso(hive_url)  # browser → password → retry → MANUAL_ENTRY_REQUIRED
+w.break_glass()  # local Admin login for when Hive is offline
 w.write()  # keeps keys it does not own
 ```
+
+`break_glass()` writes `BREAK_GLASS_USERNAME` and `BREAK_GLASS_PASSWORD_HASH` (scrypt,
+the format `@system-b90/hive-nextauth` checks). It generates the password, prints it once
+to put in a vault, and keeps only the hash. A re-run keeps it unless the operator says to
+rotate it. On an upgrade from before break-glass, missing-only mode adds it once.
 
 `install` over an existing `.env` and every `update` re-run the bundle's `setup.py`
 in **missing-only** mode (`SB90_WIZARD_MISSING_ONLY=1`): a question whose key the
