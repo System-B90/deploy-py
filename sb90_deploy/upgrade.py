@@ -71,10 +71,7 @@ def token_and_source() -> tuple[str, str]:
     return token, ("`gh auth token`" if token else "")
 
 
-HEALTH_SCRIPT = (
-    "fetch(%s).then(r=>r.text().then(t=>{console.log(t);process.exit(r.ok?0:1)}))"
-    ".catch(()=>process.exit(1))"
-)
+HEALTH_SCRIPT = docker.NODE_HEALTH  # kept for anything importing it
 
 
 class Upgrade:
@@ -633,10 +630,11 @@ class Upgrade:
     def verify(self) -> None:
         log(self.spec.name, f"verifying {self.spec.health_url}...")
         retries = int(self.spec.setting("HEALTH_RETRIES", "30"))
-        script = HEALTH_SCRIPT % json.dumps(self.spec.health_url)
         body = None
         for _attempt in range(retries):
-            healthy, body = self.compose.exec_node(self.spec.health_service, script)
+            healthy, body = self.compose.exec_health(
+                self.spec.health_service, self.spec.health_url
+            )
             if healthy:
                 break
             time.sleep(2)

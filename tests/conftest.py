@@ -10,6 +10,8 @@ fail the flow at the step it cares about:
     STUB_NETWORKS=a,b      `docker network ls` output
     STUB_CONTAINERS=a,b    `docker ps` output
     STUB_SAVE_FROM=<tar>   what `docker save -o <path>` writes
+    STUB_EXEC_MISSING=a,b  `compose exec` of these commands exits 127 (not in the image)
+    STUB_EXEC_FAILS=1      `compose exec` of any other command exits 1 (unhealthy)
 """
 
 from __future__ import annotations
@@ -49,6 +51,13 @@ if " ps --format {{.Image}} " in joined:
 if " up " in joined and env("STUB_UP_FAILS") == "1":
     sys.exit(42)
 if " exec " in joined:
+    command = args[args.index("-T") + 2] if "-T" in args else ""
+    if command in filter(None, env("STUB_EXEC_MISSING", "").split(",")):
+        sys.stderr.write("exec: " + command + ": executable file not found in $PATH\n")
+        sys.exit(127)
+    if env("STUB_EXEC_FAILS") == "1":
+        print("connection refused")
+        sys.exit(1)
     print(json.dumps({"status": "healthy", "checks": {"db": "ok"}}))
     sys.exit(0)
 if args[:2] == ["image", "inspect"]:

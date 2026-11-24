@@ -84,6 +84,10 @@ bundle's wheels, so an upgrade that ships new wheels also refreshes the tools.
 }
 ```
 
+`update` verifies the upgrade by GETting `health.url` from inside `health.service`, with the first HTTP client the
+image has: `node`, `python3`, `python`, `wget`, then `curl`. So a Node, Python or nginx/alpine image can be
+checked; a client the image lacks is skipped, while one that runs and fails counts as unhealthy.
+
 The bundle's images are **read from the release compose file**. Images tagged
 with `${<PREFIX>_VERSION}` are the app's own; the rest (Postgres, Mongo,
 nginx) are saved too, since an air-gapped host has no other way to get them.

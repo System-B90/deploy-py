@@ -164,9 +164,55 @@ class Compose:
         result = self.run(
             "exec", "-T", service, "node", "-e", script, check=False, capture=True
         )
-        body = (result.stdout or "").strip()
-        try:
-            parsed = json.loads(body) if body else None
-        except ValueError:
-            parsed = body
-        return result.returncode == 0, parsed
+        return result.returncode == 0, _parsed(result.stdout)
+
+    def exec_health(self, service, url):
+        """GET `url` from inside `service` with the first HTTP client its image has.
+
+        Returns (ok, parsed JSON or raw text). Node first (the Next.js apps), then
+        Python, wget and curl, so a Python or nginx image is checked too. A
+        client the image lacks (exit 126/127) is skipped; one that runs and
+        fails is the answer.
+        """
+        tried = []
+        for argv in _health_probes(url):
+            result = self.run("exec", "-T", service, *argv, check=False, capture=True)
+            if result.returncode not in MISSING_COMMAND:
+                return result.returncode == 0, _parsed(result.stdout)
+            tried.append(argv[0])
+        return False, f"no HTTP client in {service} (tried {', '.join(tried)})"
+
+
+# `docker exec` exits 126 when the command can't run, 127 when it doesn't exist.
+MISSING_COMMAND = (126, 127)
+
+NODE_HEALTH = (
+    "fetch(%s).then(r=>r.text().then(t=>{console.log(t);process.exit(r.ok?0:1)}))"
+    ".catch(()=>process.exit(1))"
+)
+PYTHON_HEALTH = (
+    "import sys,urllib.request\n"
+    "try:\n"
+    " r=urllib.request.urlopen(%s,timeout=5);print(r.read().decode());sys.exit(0)\n"
+    "except Exception as e:\n"
+    " print(e);sys.exit(1)"
+)
+
+
+def _health_probes(url):
+    quoted = json.dumps(url)
+    return [
+        ["node", "-e", NODE_HEALTH % quoted],
+        ["python3", "-c", PYTHON_HEALTH % quoted],
+        ["python", "-c", PYTHON_HEALTH % quoted],
+        ["wget", "-qO-", url],
+        ["curl", "-fsS", url],
+    ]
+
+
+def _parsed(stdout):
+    body = (stdout or "").strip()
+    try:
+        return json.loads(body) if body else None
+    except ValueError:
+        return body
